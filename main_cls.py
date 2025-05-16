@@ -108,7 +108,7 @@ def train(args, io):
 
 
 def test(args, io):
-    test_loader = DataLoader(ModelNetDataLoader(partition='test', npoint=args.num_points), num_workers=0,
+    test_loader = DataLoader(ModelNetDataLoader(partition='test', npoint=args.num_points), num_workers=4,
                              batch_size=args.test_batch_size, shuffle=False, drop_last=False)
 
     device = torch.device("cuda" if args.cuda else "cpu")

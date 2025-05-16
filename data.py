@@ -53,8 +53,11 @@ class ModelNetDataLoader(Dataset):
         assert (partition == 'train' or partition == 'test')
         shape_names = ['_'.join(x.split('_')[0:-1]) for x in shape_ids[partition]]
         # list of (shape_name, shape_txt_file_path) tuple
-        self.datapath = [(shape_names[i], os.path.join(DATA_DIR, shape_names[i], shape_ids[partition][i]) + '.txt') for i
-                         in range(len(shape_ids[partition]))]
+        self.datapath = [
+            (shape_names[i],
+             os.path.join(DATA_DIR, shape_names[i], partition, shape_ids[partition][i]) + '.txt')
+            for i in range(len(shape_ids[partition]))
+        ]
         print('The size of %s data is %d'%(partition,len(self.datapath)))
 
         self.cache_size = cache_size  # how many data points to cache in memory
