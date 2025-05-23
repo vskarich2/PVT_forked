@@ -1,9 +1,8 @@
 from torch.autograd import Function
 
-from modules.functional.backend import _backend
+from PVT_forked_repo.PVT_forked.modules.functional.backend import _backend
 
 __all__ = ['avg_voxelize']
-
 
 class AvgVoxelization(Function):
     @staticmethod

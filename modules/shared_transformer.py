@@ -48,7 +48,7 @@ class SA_Layer(nn.Module):
         )
     def forward(self, x, rel_pos):
         n = x.shape[2]
-        pos = torch.randn(1, n, 3).cuda(0)
+        pos = torch.randn(1, n, 3, device=x.device)
         x_q = self.q_conv(x).permute(0, 2, 1) # b, n, c 
         x_k = self.k_conv(x)# b, c, n        
         x_v = self.v_conv(x)
