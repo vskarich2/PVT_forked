@@ -1,0 +1,14 @@
+Setup this script as a run configuration with in Pycharm, obviously change the paths that are specific
+to my username and machine.
+
+/Users/vskarich/cs231n_final_project/PVT_forked_repo/PVT_forked/main_cls.py
+
+--no_cuda True --exp_name=cls --num_points=1024 --use_sgd=True --eval=True --model_path=/Users/vskarich/cs231n_final_project/PVT_forked_repo/PVT_forked/checkpoints/cls/model.t7 --test_batch_size 8
+
+Currently the model is hard-coded to use the tiny test dataset I made from
+2 class categories from ModelNet40_resampled, 20 total datapoints. The location of the
+of the hard-coded file path is in PVT_forked_repo/PVT_forked/data.py, line 39:
+
+DATA_DIR = os.path.join(BASE_DIR, 'data', 'dev_modelnet40_normal_resampled')
+
+The 'dev' prefix distinguishes it from the full dataset.
