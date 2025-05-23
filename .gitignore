@@ -1,5 +1,5 @@
 modules/functional/__pycache__/*
-modules//__pycache__/*
+modules/__pycache__/*
 
 # In PVT_forked/.gitignore
 
