@@ -1,4 +1,7 @@
 from __future__ import print_function
+import warnings
+# ignore everything
+warnings.filterwarnings("ignore")
 import os
 import argparse
 import torch
@@ -11,8 +14,6 @@ from torch.utils.data import DataLoader
 from util import cal_loss, IOStream
 import sklearn.metrics as metrics
 import provider
-
-
 
 def _init_():
     if not os.path.exists('checkpoints'):
@@ -31,7 +32,7 @@ def train(args, io):
     test_loader = DataLoader(ModelNetDataLoader(partition='test', npoint=args.num_points), num_workers=32,
                              batch_size=args.test_batch_size, shuffle=False, drop_last=False)
 
-    device = torch.device("cuda" if args.cuda else "cpu")
+    device = torch.device("cuda" if args.cuda else "mps")
 
     # Try to load models
     if args.model == 'pvt':
@@ -108,23 +109,47 @@ def train(args, io):
 
 
 def test(args, io):
-    test_loader = DataLoader(ModelNetDataLoader(partition='test', npoint=args.num_points), num_workers=4,
+    num_workers = 2
+    import time
+
+    test_loader = DataLoader(ModelNetDataLoader(partition='test', npoint=args.num_points), num_workers=num_workers,
                              batch_size=args.test_batch_size, shuffle=False, drop_last=False)
 
-    device = torch.device("cuda" if args.cuda else "cpu")
+    device = torch.device("cuda" if args.cuda else "mps")
 
     # Try to load models
+    start = time.perf_counter()
+
     model = pvt().to(device)
-    model.load_state_dict(torch.load(args.model_path))
+    model.load_state_dict(torch.load(args.model_path, map_location=device))
+    end = time.perf_counter()
+
+    print(f"Model loading took {end - start:.4f} seconds")
+
     model = model.eval()
     test_true = []
     test_pred = []
+    first_batch_loaded = False
     with torch.no_grad():
+        start = time.perf_counter()
         for data, label in test_loader:
+            if not first_batch_loaded:
+                first_batch_loaded = True
+                end = time.perf_counter()
+                print(f"Lazy data loading took {end - start:.4f} seconds")
+
+            # a) extract scalar label
             label = torch.LongTensor(label[:, 0].numpy())
+            # b) move to device
             data, label = data.to(device), label.to(device).squeeze()
+            # c) reshape to (B, C, N) ← originally (B, N, C)
+            # (B, C, N) == (Batch, Channels, Points) == (8, 6, 1024)
             data = data.permute(0, 2, 1)
+
+            # d) model(data) invokes the forward method of the pvt class
             logits = model(data)
+
+            # e) take argmax over classes
             preds = logits.max(dim=1)[1]
             test_true.append(label.cpu().numpy())
             test_pred.append(preds.detach().cpu().numpy())
@@ -135,7 +160,6 @@ def test(args, io):
         avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
         outstr = 'Test :: test acc: %.6f, test avg acc: %.6f' % (test_acc, avg_per_class_acc)
         io.cprint(outstr)
-
 
 if __name__ == "__main__":
     # Training settings
@@ -184,7 +208,8 @@ if __name__ == "__main__":
             'Using GPU : ' + str(torch.cuda.current_device()) + ' from ' + str(torch.cuda.device_count()) + ' devices')
         torch.cuda.manual_seed(args.seed)
     else:
-        io.cprint('Using CPU')
+        device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
+        io.cprint(f'Using {device}')
 
     if not args.eval:
         train(args, io)

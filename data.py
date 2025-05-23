@@ -36,7 +36,7 @@ def farthest_point_sample(xyz, npoint):
 class ModelNetDataLoader(Dataset):
     def __init__(self, npoint=1024, partition='train', uniform=False, normal_channel=True, cache_size=15000):
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        DATA_DIR = os.path.join(BASE_DIR, 'data', 'modelnet40_normal_resampled')
+        DATA_DIR = os.path.join(BASE_DIR, 'data', 'dev_modelnet40_normal_resampled')
 
         self.npoints = npoint
         self.uniform = uniform

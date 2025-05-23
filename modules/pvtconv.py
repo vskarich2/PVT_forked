@@ -298,18 +298,58 @@ class PVTConv(nn.Module):
         self.point_features = SharedTransformer(in_channels, out_channels)
 
     def forward(self, inputs):
+        # Unpack inputs:
+        # features: (B, C_in, N) point-wise features (e.g., xyz normals embedded)
+        # coords:   (B, 3, N) original point coordinates
         features, coords = inputs
+
+        # -------------------------------
+        # 1) Voxel path: convert points → voxels → back to points
+        # -------------------------------
+
+        # a) Voxelization: bin points into a dense R³ grid
+        #    returns:
+        #      voxel_features: (B, C_voxel, R, R, R)
+        #      voxel_coords:   (B, N, 3) integer voxel indices for each point
         voxel_features, voxel_coords = self.voxelization(features, coords)
-        
+
+        # b) Voxel encoder: apply 3D convolutions + local-window self-attention
+        #    treats the R³ grid as tokens, embeds them, and aggregates local context
+        #    output stays (B, C_voxel, R, R, R)
         voxel_features = self.voxel_encoder(voxel_features)
+
+        # c) Squeeze‐and‐Excitation: channel-wise gating
+        #    re-weights each channel of the voxel features adaptively
         voxel_features = self.SE(voxel_features)
+
+        # d) Trilinear devoxelization: interpolate voxel grid back to N points
+        #    uses voxel_coords to map each original point to its 8 neighboring voxels
+        #    and returns (B, C_voxel, N) point features via smooth interpolation
         voxel_features = F.trilinear_devoxelize(voxel_features, voxel_coords, self.resolution, self.training)
-        
+
+        # -------------------------------
+        # 2) Point path: pure point‐cloud self‐attention
+        # -------------------------------
+
+        # a) Rearrange coords to (B, N, 3) for pairwise diff
         pos = coords.permute(0, 2, 1)
+        # b) Compute pairwise relative positions:
+        #    rel_pos[i,j] = sum over xyz of (pos[i] - pos[j])
+        #    This yields a (B, N, N) matrix of scalar biases
         rel_pos = pos[:, :, None, :] - pos[:, None, :, :]
-        rel_pos = rel_pos.sum(dim=-1)  
-        
-        fused_features = voxel_features + self.point_features(features, rel_pos)
+        rel_pos = rel_pos.sum(dim=-1)
+
+        # -------------------------------
+        # 3) Fuse voxel + point outputs
+        # -------------------------------
+
+        # Element-wise sum of the two parallel paths:
+        # voxel_features: (B, C_voxel, N)
+        # point_out:      (B, C_voxel, N)
+        point_out = self.point_features(features, rel_pos)
+
+        # Return the fused per-point features and unchanged coords
+        fused_features = voxel_features + point_out
         return fused_features, coords
 
 class PartPVTConv(nn.Module):
