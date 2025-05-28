@@ -1,5 +1,7 @@
 from __future__ import print_function
 import warnings
+from collections import OrderedDict
+
 # ignore everything
 warnings.filterwarnings("ignore")
 import os
@@ -32,7 +34,7 @@ def train(args, io):
     test_loader = DataLoader(ModelNetDataLoader(partition='test', npoint=args.num_points), num_workers=32,
                              batch_size=args.test_batch_size, shuffle=False, drop_last=False)
 
-    device = torch.device("cuda" if args.cuda else "mps")
+    device = torch.device(args.device)
 
     # Try to load models
     if args.model == 'pvt':
@@ -107,6 +109,18 @@ def train(args, io):
             best_test_acc = test_acc
             torch.save(model.state_dict(), 'checkpoints/%s/model.t7' % args.exp_name)
 
+def load_model_and_fix_misspelled_keys(model, device):
+    # Load the checkpoint
+    checkpoint = torch.load(args.model_path, map_location=device)
+
+    # Fix typo in keys
+    corrected_state_dict = OrderedDict(
+        (k.replace("voxel_Trasformer", "voxel_Transformer"), v)
+        for k, v in checkpoint.items()
+    )
+
+    model.load_state_dict(corrected_state_dict, strict=False)
+
 
 def test(args, io):
     num_workers = 2
@@ -115,13 +129,13 @@ def test(args, io):
     test_loader = DataLoader(ModelNetDataLoader(partition='test', npoint=args.num_points), num_workers=num_workers,
                              batch_size=args.test_batch_size, shuffle=False, drop_last=False)
 
-    device = torch.device("cuda" if args.cuda else "mps")
+    device = torch.device(args.device)
 
     # Try to load models
     start = time.perf_counter()
 
     model = pvt().to(device)
-    model.load_state_dict(torch.load(args.model_path, map_location=device))
+    load_model_and_fix_misspelled_keys(model, device)
     end = time.perf_counter()
 
     print(f"Model loading took {end - start:.4f} seconds")
@@ -146,7 +160,7 @@ def test(args, io):
             # (B, C, N) == (Batch, Channels, Points) == (8, 6, 1024)
             data = data.permute(0, 2, 1)
 
-            # d) model(data) invokes the forward method of the pvt class
+            # d) Here model(data) invokes the forward method of the PVT class
             logits = model(data)
 
             # e) take argmax over classes
@@ -161,6 +175,25 @@ def test(args, io):
         outstr = 'Test :: test acc: %.6f, test avg acc: %.6f' % (test_acc, avg_per_class_acc)
         io.cprint(outstr)
 
+def set_device(args, io):
+    if not args.no_cuda and torch.cuda.is_available():
+        args.device = 'cuda'
+        args.cuda = True
+    elif torch.backends.mps.is_available():
+        args.device = 'mps'
+        args.cuda = False
+    else:
+        args.device = 'cpu'
+        args.cuda = False
+
+    if args.cuda:
+        io.cprint(
+            'Using GPU : ' + str(torch.cuda.current_device()) + ' from ' + str(torch.cuda.device_count()) + ' devices')
+        torch.cuda.manual_seed(args.seed)
+        io.cprint(f'Using cuda')
+    else:
+        io.cprint(f'Using {args.device}')
+
 if __name__ == "__main__":
     # Training settings
     parser = argparse.ArgumentParser(description='Point Cloud Recognition')
@@ -171,6 +204,7 @@ if __name__ == "__main__":
                         help='Model to use, [pvt]')
     parser.add_argument('--dataset', type=str, default='modelnet40', metavar='N',
                         choices=['modelnet40'])
+    parser.add_argument('--device', type=str, default='cpu')
     parser.add_argument('--batch_size', type=int, default=32, metavar='batch_size',
                         help='Size of batch)')
     parser.add_argument('--test_batch_size', type=int, default=32, metavar='batch_size',
@@ -196,20 +230,16 @@ if __name__ == "__main__":
     parser.add_argument('--model_path', type=str, default='checkpoints/cls/model.t7', metavar='N',
                         help='Pretrained model path')
     args = parser.parse_args()
-    _init_()
 
     io = IOStream('checkpoints/' + args.exp_name + '/run.log')
+
+    set_device(args, io)
+
+    _init_()
+
     io.cprint(str(args))
 
-    args.cuda = not args.no_cuda and torch.cuda.is_available()
     torch.manual_seed(args.seed)
-    if args.cuda:
-        io.cprint(
-            'Using GPU : ' + str(torch.cuda.current_device()) + ' from ' + str(torch.cuda.device_count()) + ' devices')
-        torch.cuda.manual_seed(args.seed)
-    else:
-        device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
-        io.cprint(f'Using {device}')
 
     if not args.eval:
         train(args, io)

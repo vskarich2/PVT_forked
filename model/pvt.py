@@ -71,7 +71,10 @@ class pvt(nn.Module):
         # 1) Apply each PVTConv block sequentially
         #    Each block returns updated features and unchanged coords
         for block in self.point_features:
-            features, _ = block((features, coords))  # features: (B, C_i, N)
+            input = (features, coords)
+
+            # The block here is an instance of PVTConv
+            features, _ = block(input)  # features: (B, C_i, N)
             out_features_list.append(features)
 
         # 2) Append per-point max and mean statistics

@@ -4,21 +4,21 @@ import math
 import torch
 def trilinear_devoxelize_forward_cpu(features, coords, resolution):
     """
-    CPU stub matching signature:
-      inputs: features (B, C, N), coords (B, N, 3), resolution
-      outputs: outs (B, C, R, R, R), inds (B, N), wgts (B, C, N)
+    # Takes voxelized features and maps them back to point cloud coordinates
+    # Input shapes:
+    # - features: (B, C, N) - batch of N points with C channels
+    # - coords: (B, N, 3) - 3D coordinates for each point
+    # - resolution: integer size of voxel grid
     """
-    # reuse your existing trilinear_devoxelize_cpu logic, but return also inds & weights
+    # Reshape features to 3D grid and perform devoxelization
     outs = trilinear_devoxelize_cpu(
         grid=features.view(features.size(0), features.size(1), resolution, resolution, resolution),
         coords=coords,
         resolution=resolution,
         training=False
     )
-    # python_fallback.trilinear_devoxelize_cpu returns (B, C, N)
-    # we need outs, plus dummy inds & wgts:
-    #   inds = flat_idx from avg_voxelize_forward (not used later)
-    #   wgts = the trilinear weights per point-channel (we can return ones)
+    
+    # Create dummy indices and weights (used in the CUDA version but not needed here)
     B, C, N = features.size()
     device, dtype = features.device, features.dtype
     inds = torch.zeros(B, N, dtype=torch.long, device=device)
@@ -28,72 +28,62 @@ def trilinear_devoxelize_forward_cpu(features, coords, resolution):
 
 def trilinear_devoxelize_backward_cpu(grad_out, coords, resolution):
     """
-    CPU stub matching signature:
-      inputs: grad_out (B, C, R, R, R), coords (B, N, 3), resolution
-      output: grad_features (B, C, N)
+    # Computes gradients for the devoxelization operation
+    # Uses a simple nearest-neighbor approach for gradient propagation
     """
-    # Simplest: distribute gradient equally (or just gather)
-    # Here we just gather the gradient from the nearest voxel:
     B, C, R1, R2, R3 = grad_out.size()
     R = R1
     _, N, _ = coords.size()
-    # compute flat voxel indices
+    
+    # Convert 3D coordinates to flat indices
     idx = coords.long()
     flat_idx = idx[...,0]*R*R + idx[...,1]*R + idx[...,2]  # (B, N)
+    
+    # Flatten gradients and gather them using the indices
     grad_flat = grad_out.view(B, C, -1)
-    # gather
     grad_feats = torch.gather(
         grad_flat, 2,
         flat_idx.unsqueeze(1).expand(-1, C, -1)
     )
     return grad_feats
 
-def avg_voxelize_forward_cpu(
-    features: torch.Tensor,
-    coords: torch.Tensor,
-    resolution: int
-):
+def avg_voxelize_forward_cpu(features, coords, resolution):
     """
-    CPU stub for avg_voxelize_forward:
-      - features: (B, C, N)
-      - coords:   (B, N, 3) integer voxel indices in [0, resolution-1]
-      - resolution: int R
-
-    Returns:
-      out:     (B, C, R, R, R) averaged voxel features
-      indices: (B, N) flat voxel index for each point
-      counts:  (B, R**3) number of points per voxel
+    # Converts point cloud to voxel grid by averaging features of points in each voxel
+    # This is the forward pass of voxelization
     """
     B, C, N = features.shape
     R = resolution
     device = features.device
-    dtype  = features.dtype
+    dtype = features.dtype
 
-    # flatten 3D coords to [0 .. R^3-1]
+    # Convert 3D coordinates to flat indices
     idx = coords.long()
-    flat_idx = idx[...,0]*R*R + idx[...,1]*R + idx[...,2]        # (B, N)
+    flat_idx = idx[...,0]*R*R + idx[...,1]*R + idx[...,2]
 
-    # prepare accumulators
+    # Initialize output tensors
     out_flat = torch.zeros(B, C, R**3, device=device, dtype=dtype)
-    counts   = torch.zeros(B,     R**3, device=device, dtype=dtype)
+    counts = torch.zeros(B, R**3, device=device, dtype=dtype)
 
-    # for each batch separately
+    # Process each batch
     for b in range(B):
-        fi = flat_idx[b]               # (N,)
-        fv = features[b]               # (C, N)
-        # scatter_sum of features into each voxel slot
-        fi_exp = fi.unsqueeze(0).expand(C, -1)  # (C, N)
+        fi = flat_idx[b]               # indices for this batch
+        fv = features[b]               # features for this batch
+        
+        # Sum features into voxels
+        fi_exp = fi.unsqueeze(0).expand(C, -1)
         out_flat[b].scatter_add_(1, fi_exp, fv)
-        # count how many points fell into each voxel
+        
+        # Count points per voxel
         counts[b] = torch.bincount(fi, minlength=R**3)
 
-    # avoid divide-by-zero
-    nonzero = counts > 0                 # (B, R^3)
+    # Average features by dividing by count (avoiding divide by zero)
+    nonzero = counts > 0
     for b in range(B):
         nz = nonzero[b]
         out_flat[b, :, nz] /= counts[b, nz]
 
-    # reshape to (B, C, R, R, R)
+    # Reshape to 3D grid
     out = out_flat.view(B, C, R, R, R)
     return out, flat_idx, counts
 
@@ -103,70 +93,49 @@ def avg_voxelize_backward_cpu(
     counts: torch.Tensor
 ):
     """
-    CPU stub for avg_voxelize_backward:
-      - grad_out: (B, C, R, R, R)
-      - flat_idx: (B, N)
-      - counts:   (B, R**3)
-
-    Returns:
-      grad_features: (B, C, N)
-      None, None     # for coords and resolution args
+    # Computes gradients for the voxelization operation
+    # Distributes gradients back to the original points
     """
     B, C, R1, R2, R3 = grad_out.shape
-    assert R1 == R2 == R3
     R = R1
     N = flat_idx.shape[1]
 
-    # flatten grad_out to (B, C, R^3)
     grad_flat = grad_out.view(B, C, -1)
     grad_features = torch.zeros(B, C, N, device=grad_out.device, dtype=grad_out.dtype)
 
+    # Process each batch
     for b in range(B):
-        fi = flat_idx[b]                 # (N,)
-        cnt = counts[b]                  # (R^3,)
+        fi = flat_idx[b]
+        cnt = counts[b]
+        
+        # Compute inverse counts (avoiding divide by zero)
         inv = torch.zeros_like(cnt)
-        nz  = cnt > 0
+        nz = cnt > 0
         inv[nz] = 1.0 / cnt[nz]
-        # broadcast inv over channel dim
-        inv_exp = inv.unsqueeze(0)       # (1, R^3)
-        # gather the gradient back to each point
-        # grad_flat[b]: (C, R^3)
-        # fi.unsqueeze(0).expand(C,N): (C, N)
+        
+        # Distribute gradients back to points
+        inv_exp = inv.unsqueeze(0)
         grad_features[b] = grad_flat[b].mul(inv_exp).gather(1, fi.unsqueeze(0).expand(C, -1))
 
-    # gradient only w.r.t. features
     return grad_features, None, None
 
-def trilinear_devoxelize_cpu(grid, coords, resolution: int, training: bool = False, **kw):
+def trilinear_devoxelize_cpu(grid, coords, resolution, training=False, **kw):
     """
-    CPU fallback for trilinear_devoxelize.
-
-    Args:
-        grid:    (B, C, R, R, R) tensor of voxel features.
-        coords:  (B, 3, N) float coordinates in [0, R-1] for N points.
-        resolution: int R, the grid size.
-        training:   ignored here (for API compatibility).
-        **kw:        ignored extra args.
-
-    Returns:
-        pts_feat: (B, C, N) trilinearly interpolated features at each coord.
+    # Performs trilinear interpolation to map voxel features back to points
+    # This is a more sophisticated version of devoxelization that uses
+    # interpolation between neighboring voxels
     """
-    # (B, 3, N) => (B, N, 3)
+    # Rearrange dimensions for processing
     coords = coords.permute(0, 2, 1)
-
     B, C, R = grid.shape
     _, N, _ = coords.shape
+    grid_flat = grid.view(B, C, -1)
 
-    # Flatten spatial dims for easy gather:
-    grid_flat = grid.view(B, C, -1)  # (B, C, R^3)
-
-    # Clamp coords just in case:
+    # Clamp coordinates to valid range
     coords_clamped = coords.clamp(0, R - 1)
+    x, y, z = coords_clamped.unbind(-1)
 
-    # Split into x, y, z components:
-    x, y, z = coords_clamped.unbind(-1)  # each (B, N)
-
-    # Floor / ceil indices:
+    # Compute floor and ceiling indices for each dimension
     x0 = x.floor().long()
     y0 = y.floor().long()
     z0 = z.floor().long()
@@ -174,16 +143,16 @@ def trilinear_devoxelize_cpu(grid, coords, resolution: int, training: bool = Fal
     y1 = (y0 + 1).clamp(max=R - 1)
     z1 = (z0 + 1).clamp(max=R - 1)
 
-    # Compute fractional weights:
-    xd = (x - x0.float()).unsqueeze(1)  # (B, 1, N)
+    # Compute interpolation weights
+    xd = (x - x0.float()).unsqueeze(1)
     yd = (y - y0.float()).unsqueeze(1)
     zd = (z - z0.float()).unsqueeze(1)
 
-    # Helper to compute flat indices:
+    # Helper function for computing flat indices
     def _flat_idx(xi, yi, zi):
-        return xi * (R * R) + yi * R + zi  # (B, N)
+        return xi * (R * R) + yi * R + zi
 
-    # For each corner, gather features:
+    # Compute indices for all 8 corners of the cube
     idx000 = _flat_idx(x0, y0, z0)
     idx001 = _flat_idx(x0, y0, z1)
     idx010 = _flat_idx(x0, y1, z0)
@@ -193,14 +162,14 @@ def trilinear_devoxelize_cpu(grid, coords, resolution: int, training: bool = Fal
     idx110 = _flat_idx(x1, y1, z0)
     idx111 = _flat_idx(x1, y1, z1)
 
-    # Gather corner values: shape each (B, C, N)
+    # Gather features from all 8 corners
     def _gather(idx):
-        # idx: (B, N) → expand to (B, C, N) for gather dim=2
         return torch.gather(
             grid_flat, 2,
             idx.unsqueeze(1).expand(-1, C, -1)
         )
 
+    # Get values at all 8 corners
     v000 = _gather(idx000)
     v001 = _gather(idx001)
     v010 = _gather(idx010)
@@ -210,7 +179,7 @@ def trilinear_devoxelize_cpu(grid, coords, resolution: int, training: bool = Fal
     v110 = _gather(idx110)
     v111 = _gather(idx111)
 
-    # Compute interpolation weights:
+    # Compute interpolation weights for all 8 corners
     w000 = (1 - xd) * (1 - yd) * (1 - zd)
     w001 = (1 - xd) * (1 - yd) * zd
     w010 = (1 - xd) * yd * (1 - zd)
@@ -220,64 +189,40 @@ def trilinear_devoxelize_cpu(grid, coords, resolution: int, training: bool = Fal
     w110 = xd * yd * (1 - zd)
     w111 = xd * yd * zd
 
-    # Weighted sum of corner features:
+    # Perform trilinear interpolation
     pts_feat = (
-            v000 * w000 +
-            v001 * w001 +
-            v010 * w010 +
-            v011 * w011 +
-            v100 * w100 +
-            v101 * w101 +
-            v110 * w110 +
-            v111 * w111
-    )  # (B, C, N)
+        v000 * w000 + v001 * w001 + v010 * w010 + v011 * w011 +
+        v100 * w100 + v101 * w101 + v110 * w110 + v111 * w111
+    )
 
     return pts_feat
 
 
-def sparse_window_attention_cpu(
-    voxel_feats: torch.Tensor,
-    window_size: int,
-    num_heads: int,
-    head_dim: int,
-    **kwargs
-) -> torch.Tensor:
+def sparse_window_attention_cpu(voxel_feats, window_size, num_heads, head_dim, **kwargs):
     """
-    Pure‐Python fallback for PVT’s sparse_window_attention.
-
-    Args:
-      voxel_feats: (B, N, C) where C = num_heads * head_dim
-      window_size: ignored in this stub
-      num_heads: number of attention heads
-      head_dim:   dimension per head
-      **kwargs:   any other args from the real stub
-
-    Returns:
-      Tensor of shape (B, N, C): the “attended” features (here full attention)
+    # Implements a CPU version of the attention mechanism used in the PVT
+    # This is a simplified version that computes full attention rather than
+    # the sparse window attention used in the GPU version
     """
     B, N, C = voxel_feats.shape
-    assert C == num_heads * head_dim, "C must equal num_heads*head_dim"
-
-    # 1) split into heads
-    x = voxel_feats.view(B, N, num_heads, head_dim)            # (B, N, H, d_h)
-    x = x.permute(0, 2, 1, 3)                                  # (B, H, N, d_h)
-
-    # 2) compute Q, K, V (here identity projections)
-    Q = x  # (B, H, N, d_h)
-    K = x  # (B, H, N, d_h)
-    V = x  # (B, H, N, d_h)
-
-    # 3) dot‐product attention scores
-    #    (B, H, N, d_h) @ (B, H, d_h, N) -> (B, H, N, N)
+    
+    # Reshape input for multi-head attention
+    x = voxel_feats.view(B, N, num_heads, head_dim)
+    x = x.permute(0, 2, 1, 3)
+    
+    # Simple self-attention implementation
+    Q = K = V = x  # Identity projections
+    
+    # Compute attention scores and weights
     scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(head_dim)
-    attn   = F.softmax(scores, dim=-1)                         # (B, H, N, N)
-
-    # 4) weighted sum
-    out = torch.matmul(attn, V)                                # (B, H, N, d_h)
-
-    # 5) merge heads back
-    out = out.permute(0, 2, 1, 3).contiguous()                 # (B, N, H, d_h)
-    out = out.view(B, N, C)                                    # (B, N, C)
-
+    attn = F.softmax(scores, dim=-1)
+    
+    # Apply attention weights
+    out = torch.matmul(attn, V)
+    
+    # Reshape back to original format
+    out = out.permute(0, 2, 1, 3).contiguous()
+    out = out.view(B, N, C)
+    
     return out
 
