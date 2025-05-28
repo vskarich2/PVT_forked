@@ -27,12 +27,13 @@ def _init_():
 
 
 def train(args, io):
+    print("Training Run Starting....")
     train_loader = DataLoader(ModelNetDataLoader(partition='train', npoint=args.num_points), num_workers=32,
                               batch_size=args.batch_size, shuffle=True, drop_last=True)
     test_loader = DataLoader(ModelNetDataLoader(partition='test', npoint=args.num_points), num_workers=32,
                              batch_size=args.test_batch_size, shuffle=False, drop_last=False)
 
-    device = torch.device("cuda" if args.cuda else "mps")
+    device = torch.device(args.device)
 
     # Try to load models
     if args.model == 'pvt':
@@ -109,13 +110,13 @@ def train(args, io):
 
 
 def test(args, io):
-    num_workers = 2
+    print("Testing Run Starting....")
     import time
 
-    test_loader = DataLoader(ModelNetDataLoader(partition='test', npoint=args.num_points), num_workers=num_workers,
+    test_loader = DataLoader(ModelNetDataLoader(partition='test', npoint=args.num_points), num_workers=args.num_workers,
                              batch_size=args.test_batch_size, shuffle=False, drop_last=False)
 
-    device = torch.device("cuda" if args.cuda else "mps")
+    device = torch.device(args.device)
 
     # Try to load models
     start = time.perf_counter()
@@ -134,6 +135,7 @@ def test(args, io):
         start = time.perf_counter()
         for data, label in test_loader:
             if not first_batch_loaded:
+                print("Processing Batches....")
                 first_batch_loaded = True
                 end = time.perf_counter()
                 print(f"Lazy data loading took {end - start:.4f} seconds")
@@ -160,6 +162,25 @@ def test(args, io):
         avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
         outstr = 'Test :: test acc: %.6f, test avg acc: %.6f' % (test_acc, avg_per_class_acc)
         io.cprint(outstr)
+
+def set_device(args, io):
+    if not args.no_cuda and torch.cuda.is_available():
+        args.device = 'cuda'
+        args.cuda = True
+    elif torch.backends.mps.is_available():
+        args.device = 'mps'
+        args.cuda = False
+    else:
+        args.device = 'cpu'
+        args.cuda = False
+
+    if args.cuda:
+        io.cprint(
+            'Using GPU : ' + str(torch.cuda.current_device()) + ' from ' + str(torch.cuda.device_count()) + ' devices')
+        torch.cuda.manual_seed(args.seed)
+        io.cprint(f'Using cuda')
+    else:
+        io.cprint(f'Using {args.device}')
 
 if __name__ == "__main__":
     # Training settings
@@ -191,25 +212,21 @@ if __name__ == "__main__":
                         help='evaluate the model')
     parser.add_argument('--num_points', type=int, default=1024,
                         help='num of points to use')
+    parser.add_argument('--num_workers', type=int, default=2,
+                        help='num of threads to use')
     parser.add_argument('--dropout', type=float, default=0.5,
                         help='dropout rate')
     parser.add_argument('--model_path', type=str, default='checkpoints/cls/model.t7', metavar='N',
                         help='Pretrained model path')
-    args = parser.parse_args()
-    _init_()
 
+    args = parser.parse_args()
     io = IOStream('checkpoints/' + args.exp_name + '/run.log')
+    set_device(args, io)
+
+    #_init_()
     io.cprint(str(args))
 
-    args.cuda = not args.no_cuda and torch.cuda.is_available()
     torch.manual_seed(args.seed)
-    if args.cuda:
-        io.cprint(
-            'Using GPU : ' + str(torch.cuda.current_device()) + ' from ' + str(torch.cuda.device_count()) + ' devices')
-        torch.cuda.manual_seed(args.seed)
-    else:
-        device = torch.device("mps") if torch.backends.mps.is_available() else torch.device("cpu")
-        io.cprint(f'Using {device}')
 
     if not args.eval:
         train(args, io)
