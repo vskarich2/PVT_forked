@@ -91,10 +91,20 @@ class Trainer():
 
     def train(self):
         print("Training Run Starting....")
-        train_loader = DataLoader(ModelNetDataLoader(partition='train', npoint=self.args.num_points), num_workers=32,
-                                  batch_size=self.args.batch_size, shuffle=True, drop_last=True)
-        test_loader = DataLoader(ModelNetDataLoader(partition='test', npoint=self.args.num_points), num_workers=32,
-                                 batch_size=self.args.test_batch_size, shuffle=False, drop_last=False)
+        train_loader = DataLoader(ModelNetDataLoader(
+            partition='train',
+            npoint=self.args.num_points),
+            num_workers=self.args.num_workers,
+            batch_size=self.args.batch_size,
+            shuffle=True,
+            drop_last=True)
+        test_loader = DataLoader(ModelNetDataLoader(
+            partition='test',
+            npoint=self.args.num_points),
+            num_workers=self.args.num_workers,
+            batch_size=self.args.test_batch_size,
+            shuffle=False,
+            drop_last=False)
 
         device = torch.device(self.args.device)
 

@@ -8,11 +8,11 @@ Functions:
 - knn_filter_empty: kNN among non-empty voxels only (handles cases where #non-empty voxels < k).
 - build_edge_features: Concatenate anchor feats, neighbor feats, and normalized offsets.
 - EdgeScorer: Simple 2-layer MLP to score edge features.
+
 """
 
 import torch
 import torch.nn as nn
-
 
 def knn_filter_empty(voxel_coords: torch.Tensor,
                      voxel_feats: torch.Tensor,
