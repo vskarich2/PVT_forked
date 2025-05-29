@@ -7,87 +7,123 @@ from torch.utils.data import Dataset
 import json
 
 def pc_normalize(pc):
-    centroid = np.mean(pc, axis=0)
-    pc = pc - centroid
-    m = np.max(np.sqrt(np.sum(pc**2, axis=1)))
-    pc = pc / m
-    return pc
-def farthest_point_sample(xyz, npoint):
+    """Normalize point cloud to unit sphere
+    Args:
+        pc: point cloud [N, D]
+    Returns:
+        normalized point cloud centered at origin with max radius 1
     """
-    Input:
-        xyz: pointcloud data, [B, N, 3]
-        npoint: number of samples
-    Return:
-        centroids: sampled pointcloud index, [B, npoint]
+    centroid = np.mean(pc, axis=0)  # Compute center of mass
+    pc = pc - centroid              # Center the point cloud
+    m = np.max(np.sqrt(np.sum(pc**2, axis=1)))  # Get max distance from center
+    pc = pc / m                     # Scale to unit sphere
+    return pc
+
+def farthest_point_sample(xyz, npoint):
+    """Sample points uniformly in 3D space using farthest point sampling
+    Args:
+        xyz: point cloud [B, N, 3]
+        npoint: number of points to sample
+    Returns:
+        centroids: sampled point indices [B, npoint]
     """
     device = xyz.device
     B, N, C = xyz.shape
     centroids = torch.zeros(B, npoint, dtype=torch.long).to(device)
-    distance = torch.ones(B, N).to(device) * 1e10
+    distance = torch.ones(B, N).to(device) * 1e10  # Initialize distances to infinity
+    # Randomly choose first point
     farthest = torch.randint(0, N, (B,), dtype=torch.long).to(device)
     batch_indices = torch.arange(B, dtype=torch.long).to(device)
+    
     for i in range(npoint):
-        centroids[:, i] = farthest
+        centroids[:, i] = farthest  # Add point to results
+        # Get xyz coordinates of current farthest point
         centroid = xyz[batch_indices, farthest, :].view(B, 1, 3)
+        # Compute distances from this point to all others
         dist = torch.sum((xyz - centroid) ** 2, -1)
+        # Update minimum distances
         distance = torch.min(distance, dist)
+        # Get point with maximum distance as next center
         farthest = torch.max(distance, -1)[1]
     return centroids
+
 class ModelNetDataLoader(Dataset):
+    """DataLoader for ModelNet40 dataset"""
     def __init__(self, npoint=1024, partition='train', uniform=False, normal_channel=True, cache_size=15000):
+        """
+        Args:
+            npoint: Number of points to sample
+            partition: 'train' or 'test'
+            uniform: Whether to use uniform sampling
+            normal_channel: Whether to include normal features
+            cache_size: How many data points to cache in memory
+        """
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
         DATA_DIR = os.path.join(BASE_DIR, 'data', 'dev_modelnet40_normal_resampled')
 
         self.npoints = npoint
         self.uniform = uniform
         self.catfile = os.path.join(DATA_DIR, 'modelnet40_shape_names.txt')
-
+        
+        # Read category names and create mapping
         self.cat = [line.rstrip() for line in open(self.catfile)]
         self.classes = dict(zip(self.cat, range(len(self.cat))))
         self.normal_channel = normal_channel
-
+        
+        # Get file paths for train/test split
         shape_ids = {}
         shape_ids['train'] = [line.rstrip() for line in open(os.path.join(DATA_DIR, 'modelnet40_train.txt'))]
         shape_ids['test'] = [line.rstrip() for line in open(os.path.join(DATA_DIR, 'modelnet40_test.txt'))]
-
+        
         assert (partition == 'train' or partition == 'test')
         shape_names = ['_'.join(x.split('_')[0:-1]) for x in shape_ids[partition]]
-        # list of (shape_name, shape_txt_file_path) tuple
-        self.datapath = [(shape_names[i], os.path.join(DATA_DIR, shape_names[i], shape_ids[partition][i]) + '.txt') for i
-                         in range(len(shape_ids[partition]))]
+        
+        # List of (shape_name, shape_txt_file_path) tuples
+        self.datapath = [(shape_names[i], os.path.join(DATA_DIR, shape_names[i], shape_ids[partition][i]) + '.txt') 
+                         for i in range(len(shape_ids[partition]))]
+        
         print('The size of %s data is %d'%(partition,len(self.datapath)))
-
-        self.cache_size = cache_size  # how many data points to cache in memory
-        self.cache = {}  # from index to (point_set, cls) tuple
+        
+        self.cache_size = cache_size
+        self.cache = {}  # Cache for loaded point clouds
 
     def __len__(self):
         return len(self.datapath)
 
     def _get_item(self, index):
+        """Get a single item from dataset with caching"""
         if index in self.cache:
-            point_set, cls = self.cache[index]
+            point_set, class_id = self.cache[index]
         else:
             fn = self.datapath[index]
-            cls = self.classes[self.datapath[index][0]]
-            cls = np.array([cls]).astype(np.int32)
+            class_id = self.classes[self.datapath[index][0]]  # Get class ID
+            class_id = np.array([class_id]).astype(np.int32)
+            
+            # Load point cloud
             point_set = np.loadtxt(fn[1], delimiter=',').astype(np.float32)
+            
+            # Sample points
             if self.uniform:
                 point_set = farthest_point_sample(point_set, self.npoints)
             else:
                 point_set = point_set[0:self.npoints,:]
 
+            # Normalize coordinates to unit sphere
             point_set[:, 0:3] = pc_normalize(point_set[:, 0:3])
-
+            
+            # Remove surface normal channels if not needed
             if not self.normal_channel:
                 point_set = point_set[:, 0:3]
 
+            # Cache if there's space
             if len(self.cache) < self.cache_size:
-                self.cache[index] = (point_set, cls)
+                self.cache[index] = (point_set, class_id)
 
-        return point_set, cls
+        return point_set, class_id
 
     def __getitem__(self, index):
         return self._get_item(index)
+
 def load_data_cls(partition):
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DATA_DIR = os.path.join(BASE_DIR, 'data')

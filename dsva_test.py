@@ -16,6 +16,9 @@ Workflow:
 import os
 import numpy as np
 import torch
+
+from PVT_forked_repo.PVT_forked.constants import BASE_DIR, DATA_DIR, NUM_POINTS_TEST
+from PVT_forked_repo.PVT_forked.data import pc_normalize
 from modules.voxelization import Voxelization           # Voxelization module
 from dsva import knn_filter_empty, build_edge_features, EdgeScorer
 
@@ -28,29 +31,62 @@ def main(txt_path: str, resolution: int = 30, k: int = 100):
         k:           Number of nearest neighbors per voxel token.
     """
     # 1) Load the point-cloud + normals: shape = (N, 6)
+    # the input files contain more data than is used in practice,
+    # and PVT (and most models trained on ModelNet40)
+    # typically operate on 1024-point subsamples of each shape.
     data = np.loadtxt(txt_path, delimiter=',', dtype=np.float32)
+
+    # Shuffle the full set of 10k points
+    np.random.shuffle(data)
+
+    # Get first 1024 points as in data.py
+    data = data[0:NUM_POINTS_TEST, :]
+
+    # Normalize coordinates in point cloud (pc) to unit sphere as in data.py
+    """
+    Why do we normalize the point cloud to a unit sphere?
+    Without this centering-and-scaling step, small objects would be 
+    crammed into a few voxels and large ones would overflow the grid, 
+    making your voxel transformer’s behavior inconsistent from sample to sample.
+    
+    Also because: 
+    -   Uniform scale – different CAD models can have wildly varying sizes or units. 
+        Normalizing to a unit sphere makes sure the same voxel grid resolution 
+        captures the same level of detail on every object.
+    -   Translation‐invariance – centering at the origin removes any 
+        arbitrary offset in the raw coordinates.
+    -   Stable voxelization – after scaling into 
+        [0,1], you can safely multiply by (R - 1) and round without 
+        worrying about negative or out-of-bounds indices.
+    """
+    data[:, 0:3] = pc_normalize(data[:, 0:3])
+
     coords_np  = data[:, :3]    # xyz positions
     normals_np = data[:, 3:]    # surface normals
+
+    # Pack all six separate dimensions of data into single 6D vector
     feats_np   = np.concatenate([coords_np, normals_np], axis=1)  # (N,6)
 
     # 2) Prepare inputs for Voxelization:
     #    features -> (B, C_in, N) = (1, 6, N)
     #    coords   -> (B,   3, N) = (1, 3, N)
-    B = 1
+    # Set B = 1
     features = torch.from_numpy(feats_np.T).unsqueeze(0)
     coords    = torch.from_numpy(coords_np.T).unsqueeze(0)
 
     # 3) Voxelize: bin points into a dense R×R×R grid
-    voxelizer = Voxelization(resolution, normalize=True, eps=0)
-    voxel_feats, _point2voxel = voxelizer(features, coords)
+    voxelizer = Voxelization(resolution, normalize=True, eps=1e-6)
+    averaged_voxel_features, _point2voxel = voxelizer(features, coords)
 
+    v = averaged_voxel_features
+    print("voxel feature stats:", v.mean().item(), v.std().item(), v.min().item(), v.max().item())
     # Report total voxel tokens
-    Bv, C_vox, R, _, _ = voxel_feats.shape
+    Bv, C_vox, R, _, _ = averaged_voxel_features.shape
     V = R ** 3
     print(f"[Test] Voxel grid resolution: {resolution}³ = {V} tokens (batch size {Bv})")
 
     # 4) Flatten to (B, V, C_vox)
-    tokens = voxel_feats.view(Bv, C_vox, V).permute(0, 2, 1)
+    tokens = averaged_voxel_features.view(Bv, C_vox, V).permute(0, 2, 1)
 
     # 5) Compute continuous voxel-center coords in [-1,1]³
     idx = torch.arange(R)
@@ -89,7 +125,9 @@ def main(txt_path: str, resolution: int = 30, k: int = 100):
 
 
 if __name__ == "__main__":
-    txt = r"C:\Users\mberm\PVT_forked\data\dev_modelnet40_normal_resampled\airplane\airplane_0001.txt"
+
+    # This makes file paths work for any OS
+    txt = os.path.join(DATA_DIR, "airplane", "airplane_0001.txt")
     if not os.path.isfile(txt):
         raise FileNotFoundError(f"Cannot find file: {txt}")
     main(txt)
