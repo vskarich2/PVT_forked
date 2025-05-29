@@ -258,7 +258,7 @@ def main(txt_path: str, resolution: int = 30, k: int = 100, eps=1e-6):
     # non-empty voxel and its k neighbors. They are the primary output of this
     # preprocessing pipeline and would typically be fed into a downstream graph-based
     # learning model (e.g., GNN or sparse Transformer).
-    return scores_nz
+
 
 
 if __name__ == "__main__":
