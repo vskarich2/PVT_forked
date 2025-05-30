@@ -3,7 +3,7 @@ import torch.nn as nn
 import numpy as np
 
 from PVT_forked_repo.PVT_forked.modules.box_attention import rand_bbox
-from PVT_forked_repo.PVT_forked.modules.sbox_transformer import Transformer
+from PVT_forked_repo.PVT_forked.modules.attention_transformer import Transformer
 
 
 class VoxelEncoder(nn.Module):

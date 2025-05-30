@@ -8,7 +8,12 @@ __all__ = ['pvt']
 
 class pvt(nn.Module):
     # Define four blocks: (output channels, number of repeats, resolution divisor)
-    blocks = ((64, 1, 30), (128, 2, 15), (512, 1, None), (1024, 1, None))
+    blocks = (
+        (64, 1, 30),  # one PVTConv block → 64-dim features on a 30³ grid
+        (128, 2, 15),  # two PVTConv blocks → 128-dim features on a 15³ grid
+        (512, 1, None),
+        (1024, 1, None),
+    )
 
     def __init__(
         self,

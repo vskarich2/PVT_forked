@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 
+from PVT_forked_repo.PVT_forked.modules.dsva_block import DSVABlock
 from PVT_forked_repo.PVT_forked.modules.sboxblock import Sboxblock
 
 
@@ -52,7 +53,15 @@ class Transformer(nn.Module):
                       drop_path=drop_path1 if (i % 2 == 0) else drop_path2)
             for i in range(self.depth)])
 
-        self.dsva_blocks = nn.ModuleList([])
+        self.dsva_blocks = nn.ModuleList([
+            DSVABlock(
+                self.args,
+                out_channels,
+                resolution,
+                mlp_dims,
+                # There are two DropPaths; using 1 right now for simplicity .
+                drop_path=drop_path1)
+        ])
 
     def forward(self, x):
         """
