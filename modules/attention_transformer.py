@@ -63,7 +63,7 @@ class Transformer(nn.Module):
                 drop_path=drop_path1)
         ])
 
-    def forward(self, x):
+    def forward(self, x, averaged_voxel_tokens=None):
         """
         Performs the forward pass through the stack of Sboxblocks
         or the DSVA block.
@@ -77,7 +77,7 @@ class Transformer(nn.Module):
 
         if self.args.use_dsva:
             for blk in self.dsva_blocks:
-                x = blk(x)
+                x = blk(x, averaged_voxel_tokens)
             return x
         else:
             # Iterate through each Sboxblock and apply it sequentially.

@@ -18,7 +18,14 @@ class EdgeScoringMLP(nn.Module):
 
 
 class SparseDynamicVoxelAttention(nn.Module):
-    def __init__(self, dim, num_heads=4, k_knn=10, k_select=4, edge_hidden_dim=64):
+    def __init__(
+            self,
+            dim,
+            num_heads=4,
+            k_knn=10,
+            k_select=4,
+            edge_hidden_dim=64
+    ):
         super().__init__()
 
         self.k_knn = k_knn
@@ -71,7 +78,6 @@ class SparseDynamicVoxelAttention(nn.Module):
             updated_tokens.append(out.squeeze(0))  # (V', D)
 
         return updated_tokens
-
 
 class CrossAttention(nn.Module):
     def __init__(self, dim, num_heads):
