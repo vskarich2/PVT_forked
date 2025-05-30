@@ -112,7 +112,7 @@ class PVTConv(nn.Module):
         # a) Voxelization: Bin points into a dense R³ grid.
         #    This operation aggregates point features into voxel cells (e.g., by averaging).
         #    - voxel_features: (B, C_voxel, R, R, R) - the 3D voxel grid features.
-        #    - voxel_coords:   (B, N, 3) - integer voxel indices for each original point.
+        #    - voxel_coords:   (B, 3, N) - integer voxel indices for each original point.
         #                      These are crucial for the devoxelization step.
         voxel_features, voxel_coords = self.voxelization(features, coords)
 

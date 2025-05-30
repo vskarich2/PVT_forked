@@ -44,7 +44,8 @@ class Trainer():
         model = pvt(args=self.args).to(device)
         model.load_state_dict(
             torch.load(
-                self.args.model_path, map_location=device))
+                self.args.model_path, map_location=device),
+            strict=False)
 
         end = time.perf_counter()
 
