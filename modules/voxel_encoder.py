@@ -74,7 +74,7 @@ class VoxelEncoder(nn.Module):
             self.args
         )
 
-    def forward(self, inputs):
+    def forward(self, inputs, averaged_voxel_tokens):
         """
         Performs the forward pass of the VoxelEncoder.
 
@@ -104,7 +104,7 @@ class VoxelEncoder(nn.Module):
 
         # Pass the features through the Transformer where
         # both fixed-window attention and dynamic sparse attention live
-        x = self.voxel_Trasformer(x) # Shape: (B, R^3, C_out)
+        x = self.voxel_Trasformer(x, averaged_voxel_tokens) # Shape: (B, R^3, C_out)
 
         # Reshape the output from the Transformer back to 3D voxel grid format.
         x = torch.reshape(x, (-1, self.resolution, self.resolution, self.resolution, self.out_channels))
