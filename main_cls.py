@@ -57,6 +57,8 @@ if __name__ == "__main__":
                         help='number of episode to train ')
     parser.add_argument('--use_sgd', type=bool, default=True,
                         help='Use SGD')
+    parser.add_argument('--use_dsva', type=bool, default=False,
+                        help='Use DSVA')
     parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
                         help='learning rate (default: 0.001, 0.01 if using sgd)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',

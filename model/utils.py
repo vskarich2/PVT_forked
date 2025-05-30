@@ -45,18 +45,34 @@ def create_mlp_components(in_channels, out_channels, classifier=False, dim=2, wi
     return layers, out_channels[-1] if classifier else int(r * out_channels[-1])
 
 
-def create_pointnet_components(blocks, in_channels, normalize=True, eps=0,
-                               width_multiplier=1, voxel_resolution_multiplier=1,model=''):
+def create_pointnet_components(
+        blocks,
+        in_channels,
+        normalize=True,
+        eps=0,
+        width_multiplier=1,
+        voxel_resolution_multiplier=1,
+        model='',
+        args=None):
+
     r, vr = width_multiplier, voxel_resolution_multiplier
 
     layers, concat_channels = [], 0
     for out_channels, num_blocks, voxel_resolution in blocks:
         out_channels = int(r * out_channels)
+
         if voxel_resolution is None:
             block = SharedMLP
+
         elif model=='PVTConv':
-            block = functools.partial(PVTConv, kernel_size=3, resolution=int(vr * voxel_resolution),
-                                      normalize=normalize, eps=eps)
+            block = functools.partial(
+                PVTConv,
+                args=args,
+                kernel_size=3,
+                resolution=int(vr * voxel_resolution),
+                normalize=normalize,
+                eps=eps)
+
         elif model=='PartPVTConv':
             block = functools.partial(PartPVTConv, kernel_size=3, resolution=int(vr * voxel_resolution),
                                       normalize=normalize, eps=eps)
@@ -64,7 +80,7 @@ def create_pointnet_components(blocks, in_channels, normalize=True, eps=0,
             block = functools.partial(SemPVTConv, kernel_size=3, resolution=int(vr * voxel_resolution),
                                       normalize=normalize, eps=eps)
         for _ in range(num_blocks):
-            layers.append(block(in_channels, out_channels))
+            layers.append(block(in_channels=in_channels, out_channels=out_channels))
             in_channels = out_channels
             concat_channels += out_channels
     return layers, in_channels, concat_channels
