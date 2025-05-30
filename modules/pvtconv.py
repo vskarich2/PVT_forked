@@ -32,7 +32,16 @@ class PVTConv(nn.Module):
     the strengths of both grid-based (local context, convolution efficiency)
     and point-based (fine-grained detail, permutation invariance) processing.
     """
-    def __init__(self, in_channels, out_channels, kernel_size, resolution, normalize=True, eps=0):
+    def __init__(
+            self,
+            args,
+            in_channels,
+            out_channels,
+            kernel_size,
+            resolution,
+            normalize=True,
+            eps=0
+    ):
         """
         Initializes the PVTConv module.
 
@@ -45,6 +54,7 @@ class PVTConv(nn.Module):
             eps (float): Epsilon for normalization in Voxelization.
         """
         super().__init__()
+        self.args = args
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size = kernel_size
@@ -58,8 +68,17 @@ class PVTConv(nn.Module):
         self.voxelization = Voxelization(resolution, normalize=normalize, eps=eps)
 
         # Voxel Encoder: Processes the voxel grid using 3D convolutions and Transformer blocks.
-        self.voxel_encoder = VoxelEncoder(in_channels, out_channels, kernel_size, resolution, self.boxsize,
-                                          self.mlp_dims, self.drop_path1, self.drop_path2)
+        self.voxel_encoder = VoxelEncoder(
+            in_channels,
+            out_channels,
+            kernel_size,
+            resolution,
+            self.boxsize,
+            self.mlp_dims,
+            self.drop_path1,
+            self.drop_path2,
+            self.args
+        )
 
         # SE3d (Squeeze-and-Excitation) module: Applies channel-wise recalibration
         # to the voxel features, enhancing important channels and suppressing less relevant ones.

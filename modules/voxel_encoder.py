@@ -12,7 +12,17 @@ class VoxelEncoder(nn.Module):
     applies an initial convolution for feature extraction, adds positional
     embeddings, and then processes them through a Transformer block.
     """
-    def __init__(self, in_channels, out_channels, kernel_size, resolution, boxsize, mlp_dims, drop_path1, drop_path2):
+    def __init__(
+            self,
+            in_channels,
+            out_channels,
+            kernel_size,
+            resolution,
+            boxsize,
+            mlp_dims,
+            drop_path1,
+            drop_path2,
+            args):
         """
         Initializes the VoxelEncoder.
 
@@ -27,6 +37,7 @@ class VoxelEncoder(nn.Module):
             drop_path2 (float): DropPath rate for Transformer blocks.
         """
         super().__init__()
+        self.args = args
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.resolution = resolution
@@ -50,7 +61,18 @@ class VoxelEncoder(nn.Module):
         self.pos_embedding = nn.Parameter(torch.randn(1, self.resolution ** 3, self.out_channels))
 
         # Transformer module to process the voxel features.
-        self.voxel_Trasformer = Transformer(out_channels, resolution, boxsize, mlp_dims, drop_path1, drop_path2)
+        # This is where the sbox fixed window attention blocks live AND
+        # where DSVA lives.
+
+        self.voxel_Trasformer = Transformer(
+            out_channels,
+            resolution,
+            boxsize,
+            mlp_dims,
+            drop_path1,
+            drop_path2,
+            self.args
+        )
 
     def forward(self, inputs):
         """
@@ -80,7 +102,8 @@ class VoxelEncoder(nn.Module):
         # Apply dropout to the features after adding positional embeddings.
         x = self.pos_drop(x)
 
-        # Pass the features through the Transformer.
+        # Pass the features through the Transformer where
+        # both fixed-window attention and dynamic sparse attention live
         x = self.voxel_Trasformer(x) # Shape: (B, R^3, C_out)
 
         # Reshape the output from the Transformer back to 3D voxel grid format.

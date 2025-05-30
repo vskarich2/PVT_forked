@@ -12,16 +12,19 @@ class pvt(nn.Module):
 
     def __init__(
         self,
+        args,
         num_classes: int = 40,
         width_multiplier: float = 1,
         voxel_resolution_multiplier: float = 1,
     ):
         super().__init__()
+        self.args = args
         # Input channels: x,y,z + normal_x, normal_y, normal_z
         self.in_channels = 6  # features shape: (B, 6, N)
 
         # Create the sequence of PVTConv blocks and compute output channel counts
         layers, channels_point, concat_channels_point = create_pointnet_components(
+            args=self.args,
             blocks=self.blocks,
             in_channels=self.in_channels,
             normalize=False,
