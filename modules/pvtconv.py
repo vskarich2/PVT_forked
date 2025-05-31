@@ -87,17 +87,6 @@ class PVTConv(nn.Module):
 
         self.point_features = SharedTransformer(in_channels, out_channels)
 
-    def count_non_empty_voxels(self, averaged_voxel_features):
-        eps = 1e-6
-        Bv, C_vox, R_actual, _, _ = averaged_voxel_features.shape  # R_actual should be `resolution`
-        V = R_actual ** 3
-        print(f"[Test] Voxel grid resolution: {R_actual}³ = {V} tokens (batch size {Bv})")
-        tokens = averaged_voxel_features.view(Bv, C_vox, V).permute(0, 2, 1)  # Shape: (B, V, C_vox)
-        mask = (tokens.norm(dim=-1) > eps).squeeze(0)  # Shape: (V,) boolean
-        non_empty_idxs = mask.nonzero(as_tuple=False).squeeze(1)  # Shape: (V',) where V' is num non-empty
-        non_empty_count = non_empty_idxs.numel()
-        print(f"Mean non-empty voxel count for 3D object in batch: {non_empty_count / Bv} out of {V}")
-
     def forward(self, inputs):
         """
         Performs the forward pass of the PVTConv module.
@@ -125,7 +114,6 @@ class PVTConv(nn.Module):
         #    - voxel_coords:   (B, 3, N) - integer voxel indices for each original point.
         #                      These are crucial for the devoxelization step.
         voxel_features, voxel_coords = self.voxelization(features, coords)
-        self.count_non_empty_voxels(voxel_features)
         # b) Voxel encoder: Apply 3D convolutions and local-window self-attention.
         #    This module processes the dense voxel grid, extracts hierarchical features,
         #    and aggregates local context within the grid.

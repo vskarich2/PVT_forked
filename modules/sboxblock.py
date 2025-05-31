@@ -40,7 +40,10 @@ class Sboxblock(nn.Module):
 
         # Initialize the BoxAttention module.
         self.attn = BoxAttention(
-            out_channels, box_size=self.box_size, num_heads=self.heads)
+            dim=self.out_channels,
+            box_size=self.box_size,
+            num_heads=self.heads
+        )
 
         # --- Create attention mask for shifted windows ---
         # This mask is crucial for shifted window attention. When windows are shifted,

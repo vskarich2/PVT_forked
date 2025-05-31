@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
-import numpy as np
 
-from PVT_forked_repo.PVT_forked.modules.dsva_block import DSVABlock
+from PVT_forked_repo.PVT_forked.modules.dsva.dsva_block import DSVABlock
 from PVT_forked_repo.PVT_forked.modules.sboxblock import Sboxblock
 
 
@@ -63,7 +62,7 @@ class Transformer(nn.Module):
                 drop_path=drop_path1)
         ])
 
-    def forward(self, x, averaged_voxel_tokens=None):
+    def forward(self, x, non_empty_mask):
         """
         Performs the forward pass through the stack of Sboxblocks
         or the DSVA block.
@@ -77,7 +76,7 @@ class Transformer(nn.Module):
 
         if self.args.use_dsva:
             for blk in self.dsva_blocks:
-                x = blk(x, averaged_voxel_tokens)
+                x = blk(x, non_empty_mask)
             return x
         else:
             # Iterate through each Sboxblock and apply it sequentially.
