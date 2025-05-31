@@ -83,10 +83,10 @@ if __name__ == "__main__":
                         help='num of threads to use')
     parser.add_argument('--dropout', type=float, default=0.5,
                         help='dropout rate')
-    parser.add_argument('--model_path', type=str, default='checkpoints/cls/model.t7', metavar='N',
-                        help='Pretrained model path')
 
     # Modified arguments
+    parser.add_argument('--model_path', type=str, default='None', metavar='N',
+                        help='Pretrained model path')
     parser.add_argument('--use_sgd', action='store_true',
                         help='Use SGD')
     parser.add_argument('--no_cuda', action='store_true',
