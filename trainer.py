@@ -44,7 +44,7 @@ class Trainer():
                 "epochs": self.args.epochs
             }
         )
-        
+
         # This logs weights and gradients every epoch
         wandb.watch(self.model, log="all", log_freq=1)
 
@@ -117,6 +117,7 @@ class Trainer():
 
             wandb.log({
                 "train/TrainAvgLoss": train_avg_loss,
+                "train/LearningRate": self.scheduler.get_lr()[0],
                 "epoch": epoch
             })
 
