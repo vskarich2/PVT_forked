@@ -2,8 +2,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from PVT_forked_repo.PVT_forked.modules.box_attention import rand_bbox
-from PVT_forked_repo.PVT_forked.modules.attention_transformer import Transformer
+from modules.box_attention import rand_bbox
+from modules.attention_transformer import Transformer
 
 def extract_non_empty_voxel_mask(averaged_voxel_features, args):
     eps = 1e-6

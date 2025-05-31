@@ -1,5 +1,5 @@
 from __future__ import print_function
-from tqdm import tqdm
+from tqdm import tqdm, trange
 import warnings
 # ignore everything
 warnings.filterwarnings("ignore")
@@ -22,162 +22,219 @@ class Trainer():
     def __init__(self, args, io):
         self.args = args
         self.io = io
+        self.device = torch.device(self.args.device)
+        self.model = self.load_model(self.device)
+        self.opt = self.set_optimizer(self.model)
+        self.scheduler = CosineAnnealingLR(self.opt, self.args.epochs, eta_min=self.args.lr)
+        self.criterion = cal_loss
 
     def test(self):
         print("Testing Run Starting....")
-        import time
 
-        test_loader = DataLoader(
-            ModelNetDataLoader(
-                partition='test',
-                npoint=self.args.num_points),
-            num_workers=self.args.num_workers,
-            batch_size=self.args.test_batch_size,
-            shuffle=False,
-            drop_last=False)
+        test_loader = self.get_test_loader()
 
-        device = torch.device(self.args.device)
-
-        # Try to load models
-        start = time.perf_counter()
-
-        model = pvt(args=self.args).to(device)
-        model.load_state_dict(
-            torch.load(
-                self.args.model_path, map_location=device),
-            strict=False)
-
-        end = time.perf_counter()
-
-        print(f"Model loading took {end - start:.4f} seconds")
-
-        model = model.eval()
+        self.model.eval()
         test_true = []
         test_pred = []
-        first_batch_loaded = False
+
         with tqdm(test_loader, unit="batch") as logging_wrapper:
             logging_wrapper.set_description(f"TESTING {len(test_loader)} Batches...")
 
+            with torch.no_grad():
+                for data, label in logging_wrapper:
+
+                    label = torch.LongTensor(label[:, 0].numpy())
+                    data, label = data.to(self.device), label.to(self.device).squeeze()
+                    data = data.permute(0, 2, 1)
+                    logits = self.model(data)
+
+                    preds = logits.max(dim=1)[1]
+                    test_true.append(label.cpu().numpy())
+                    test_pred.append(preds.detach().cpu().numpy())
+
+                test_true = np.concatenate(test_true)
+                test_pred = np.concatenate(test_pred)
+                test_acc = metrics.accuracy_score(test_true, test_pred)
+                avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
+                outstr = 'Test :: test acc: %.6f, test avg acc: %.6f' % (test_acc, avg_per_class_acc)
+                self.io.cprint(outstr)
+
+    def train(self):
+
+        print("Training Run Starting....")
+
+        train_loader = self.get_train_loader()
+        test_loader = self.get_test_loader()
+
+        best_test_acc = 0
+
+        # Outer epoch loop with trange
+        for epoch in trange(
+                self.args.epochs,
+                desc="Epoch",
+                leave=True,
+                unit="epoch"
+        ):
+            # Train one epoch
+            self.train_one_epoch(epoch, train_loader)
+
+            # Test one epoch
+            test_acc = self.test_one_epoch(epoch, test_loader)
+
+            # Possibly save new checkpoint
+            if test_acc >= best_test_acc:
+                best_test_acc = test_acc
+                self.save_new_checkpoint()
+
+    def test_one_epoch(self, epoch, test_loader):
+
+        test_loss = 0.0
+        count = 0.0
+        test_pred = []
+        test_true = []
+        self.model.eval()
+
+        # Inner test loop wrapped in tqdm
+        test_bar = tqdm(
+            test_loader,
+            desc=f"Testing  (Epoch {epoch + 1}/{self.args.epochs})",
+            leave=False,
+            unit="batch"
+        )
         with torch.no_grad():
-            start = time.perf_counter()
-            for data, label in logging_wrapper:
-                if not first_batch_loaded:
-                    print("Processing Batches....")
-                    first_batch_loaded = True
-                    end = time.perf_counter()
-                    print(f"Lazy data loading took {end - start:.4f} seconds")
+            for data, label in test_bar:
+                data, label = self.preprocess_test_data(data, label)
 
-                # a) extract scalar label
-                label = torch.LongTensor(label[:, 0].numpy())
-                # b) move to device
-                data, label = data.to(device), label.to(device).squeeze()
-                # c) reshape to (B, C, N) ← originally (B, N, C)
-                # (B, C, N) == (Batch, Channels, Points) == (8, 6, 1024)
-                data = data.permute(0, 2, 1)
+                logits = self.model(data)
+                loss = self.criterion(logits, label)
 
-                # d) model(data) invokes the forward method of the pvt class
-                logits = model(data)
-
-                # e) take argmax over classes
                 preds = logits.max(dim=1)[1]
+                count += self.args.test_batch_size
+                test_loss += loss.item() * self.args.test_batch_size
                 test_true.append(label.cpu().numpy())
                 test_pred.append(preds.detach().cpu().numpy())
 
-            test_true = np.concatenate(test_true)
-            test_pred = np.concatenate(test_pred)
-            test_acc = metrics.accuracy_score(test_true, test_pred)
-            avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
-            outstr = 'Test :: test acc: %.6f, test avg acc: %.6f' % (test_acc, avg_per_class_acc)
-            self.io.cprint(outstr)
+                # Update test_bar with current average test loss
+                running_avg_loss = test_loss / count
+                test_bar.set_postfix(test_loss=running_avg_loss)
 
-    def train(self):
-        print("Training Run Starting....")
-        train_loader = DataLoader(ModelNetDataLoader(
-            partition='train',
-            npoint=self.args.num_points),
-            num_workers=self.args.num_workers,
-            batch_size=self.args.batch_size,
-            shuffle=True,
-            drop_last=True)
+        # Close test bar for this epoch
+        test_bar.close()
+
+        # Compute final test metrics
+        test_acc = self.check_stats(count, epoch, test_loss, test_pred, test_true)
+        return test_acc
+
+    def train_one_epoch(self, epoch, train_loader):
+        self.scheduler.step()
+        self.model.train()
+
+        # Inner batch loop wrapped in tqdm
+        train_bar = tqdm(
+            train_loader,
+            desc=f"Training (Epoch {epoch + 1}/{self.args.epochs})",
+            leave=False,
+            unit="batch"
+        )
+
+        for data, label in train_bar:
+            data, label = self.preprocess_data(data, label)
+            self.opt.zero_grad()
+            logits = self.model(data)
+            loss = self.criterion(logits, label)
+            loss.backward()
+            self.opt.step()
+
+            # Update train_bar with current loss
+            train_bar.set_postfix(batch_loss=f"{loss.item():.6f}")
+
+        # Close training bar for this epoch
+        train_bar.close()
+
+    def save_new_checkpoint(self):
+        torch.save(
+            self.model.state_dict(),
+            f"checkpoints/{self.args.exp_name}/model.t7"
+        )
+
+    def preprocess_test_data(self, data, label):
+        label = torch.LongTensor(label[:, 0].numpy())
+        data, label = data.to(self.device), label.to(self.device).squeeze()
+        data = data.permute(0, 2, 1)
+        return data, label
+
+    def check_stats(self, count, epoch, test_loss, test_pred, test_true):
+        test_true = np.concatenate(test_true)
+        test_pred = np.concatenate(test_pred)
+        test_acc = metrics.accuracy_score(test_true, test_pred)
+        avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
+
+        outstr = (
+            f"Epoch {epoch + 1:3d}/{self.args.epochs:3d} "
+            f"TestLoss={(test_loss / count):.6f} "
+            f"TestAcc={test_acc:.6f} "
+            f"TestAvgAcc={avg_per_class_acc:.6f}"
+        )
+
+        self.io.cprint(outstr)
+
+        return test_acc
+
+    def preprocess_data(self, data, label):
+        data = data.numpy()
+        data = provider.random_point_dropout(data)
+        data[:, :, 0:3] = provider.random_scale_point_cloud(data[:, :, 0:3])
+        data[:, :, 0:3] = provider.shift_point_cloud(data[:, :, 0:3])
+        data = torch.Tensor(data)
+        label = torch.LongTensor(label[:, 0].numpy())
+        data, label = data.to(self.device), label.to(self.device).squeeze()
+        data = data.permute(0, 2, 1)
+        return data, label
+
+    def get_test_loader(self):
         test_loader = DataLoader(ModelNetDataLoader(
             partition='test',
-            npoint=self.args.num_points),
+            npoint=self.args.num_points,
+            args=self.args
+        ),
             num_workers=self.args.num_workers,
             batch_size=self.args.test_batch_size,
             shuffle=False,
-            drop_last=False)
+            drop_last=False
+        )
+        return test_loader
 
-        device = torch.device(self.args.device)
+    def get_train_loader(self):
+        train_loader = DataLoader(ModelNetDataLoader(
+            partition='train',
+            npoint=self.args.num_points,
+            args=self.args
+        ),
+            num_workers=self.args.num_workers,
+            batch_size=self.args.batch_size,
+            shuffle=True,
+            drop_last=True
+        )
+        return train_loader
 
+    def load_model(self, device):
         # Try to load models
         if self.args.model == 'pvt':
-            model = pvt().to(device)
+            model = pvt(args=self.args).to(device)
         else:
             raise Exception("Not implemented")
+        if self.args.use_checkpoint:
+            model.load_state_dict(
+                torch.load(
+                    self.args.model_path, map_location=device),
+                strict=False)
+        return model
 
-        print("Let's use", torch.cuda.device_count(), "GPUs!")
-
+    def set_optimizer(self, model):
         if self.args.use_sgd:
             print("Use SGD")
             opt = optim.SGD(model.parameters(), lr=self.args.lr * 10, momentum=self.args.momentum, weight_decay=1e-4)
         else:
             print("Use Adam")
             opt = optim.Adam(model.parameters(), lr=self.args.lr, weight_decay=1e-4)
-
-        scheduler = CosineAnnealingLR(opt, self.args.epochs, eta_min=self.args.lr)
-        criterion = cal_loss
-        best_test_acc = 0
-
-        for epoch in range(self.args.epochs):
-            scheduler.step()
-            ####################
-            # Train
-            ####################
-            model.train()
-            for data, label in train_loader:
-                data = data.numpy()
-                data = provider.random_point_dropout(data)
-                data[:, :, 0:3] = provider.random_scale_point_cloud(data[:, :, 0:3])
-                data[:, :, 0:3] = provider.shift_point_cloud(data[:, :, 0:3])
-                data = torch.Tensor(data)
-                label = torch.LongTensor(label[:, 0].numpy())
-                data, label = data.to(device), label.to(device).squeeze()
-                data = data.permute(0, 2, 1)
-                opt.zero_grad()
-                logits = model(data)
-                loss = criterion(logits, label)
-                loss.backward()
-                opt.step()
-
-            ####################
-            # Test
-            ####################
-            test_loss = 0.0
-            count = 0.0
-            model.eval()
-            test_pred = []
-            test_true = []
-            for data, label in test_loader:
-                label = torch.LongTensor(label[:, 0].numpy())
-                data, label = data.to(device), label.to(device).squeeze()
-                data = data.permute(0, 2, 1)
-                batch_size = data.size()[0]
-                logits = model(data)
-                loss = criterion(logits, label)
-                preds = logits.max(dim=1)[1]
-                count += batch_size
-                test_loss += loss.item() * batch_size
-                test_true.append(label.cpu().numpy())
-                test_pred.append(preds.detach().cpu().numpy())
-            test_true = np.concatenate(test_true)
-            test_pred = np.concatenate(test_pred)
-            test_acc = metrics.accuracy_score(test_true, test_pred)
-            avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
-            outstr = 'Test %d, loss: %.6f, test acc: %.6f, test avg acc: %.6f' % (epoch,
-                                                                                  test_loss * 1.0 / count,
-                                                                                  test_acc,
-                                                                  avg_per_class_acc)
-            self.io.cprint(outstr)
-            if test_acc >= best_test_acc:
-                best_test_acc = test_acc
-                torch.save(model.state_dict(), 'checkpoints/%s/model.t7' % self.args.exp_name)
+        return opt

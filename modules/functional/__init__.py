@@ -1,5 +1,5 @@
-from PVT_forked_repo.PVT_forked.modules.functional.devoxelization import trilinear_devoxelize
-from PVT_forked_repo.PVT_forked.modules.functional.interpolatation import nearest_neighbor_interpolate
-from PVT_forked_repo.PVT_forked.modules.functional.voxelization import avg_voxelize
-from PVT_forked_repo.PVT_forked.modules.functional.sampling import gather, logits_mask
+from modules.functional.devoxelization import trilinear_devoxelize
+from modules.functional.interpolatation import nearest_neighbor_interpolate
+from modules.functional.voxelization import avg_voxelize
+from modules.functional.sampling import gather, logits_mask
 

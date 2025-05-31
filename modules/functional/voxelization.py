@@ -1,6 +1,6 @@
 from torch.autograd import Function
 
-from PVT_forked_repo.PVT_forked.modules.functional.backend import _backend
+from modules.functional.backend import _backend
 
 __all__ = ['avg_voxelize']
 

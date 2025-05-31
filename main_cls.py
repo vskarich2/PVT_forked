@@ -1,16 +1,21 @@
 from __future__ import print_function
 import warnings
+import sys
+import torch
 
-from PVT_forked_repo.PVT_forked.trainer import Trainer
+# This enables verbose mode for error messages in torch.
+# TURN OFF IN PROD, SLOWS EVERYTHING DOWN
+#torch.autograd.set_detect_anomaly(True)
+
+from trainer import Trainer
 
 # ignore everything
 warnings.filterwarnings("ignore")
 import os
 import argparse
-import torch
-from util import cal_loss, IOStream
+from util import IOStream
 
-def _init_():
+def _init_(args):
     if not os.path.exists('checkpoints'):
         os.makedirs('checkpoints')
     if not os.path.exists('checkpoints/' + args.exp_name):
@@ -19,6 +24,14 @@ def _init_():
     os.system('cp model/pvt.py checkpoints' + '/' + args.exp_name + '/' + 'pvt.py.backup')
     os.system('cp util.py checkpoints' + '/' + args.exp_name + '/' + 'util.py.backup')
     os.system('cp data.py checkpoints' + '/' + args.exp_name + '/' + 'data.py.backup')
+
+def print_os():
+    if sys.platform == 'win32':
+        print("This is a Windows machine.")
+    elif sys.platform == 'darwin':
+        print("This is a macOS machine.")
+    else:
+        print(f"This is a different operating system: {sys.platform}")
 
 def test_for_cuda():
     try:
@@ -46,6 +59,8 @@ def set_device(args, io):
         args.cuda = False
 
     test_for_cuda()
+
+    print_os()
 
     if args.cuda:
         io.cprint(
@@ -95,19 +110,29 @@ if __name__ == "__main__":
     parser.add_argument('--eval', action='store_true',
                         help='evaluate the model')
 
+
     # Added arguments
     parser.add_argument('--use_dsva', action='store_true', help='Use DSVA')
     parser.add_argument('--use_python_fallback', action='store_true', help='Use python vs. CUDA C++ extensions.')
     parser.add_argument('--debug_verbose', action='store_true', help='Log debug.')
-
+    parser.add_argument('--local_dev', action='store_true', help='Use dev dataset plus other dev-only things.')
+    parser.add_argument('--use_checkpoint', action='store_true', help='Load pretrained model from checkpoint. '
+                                                                      'If this flag is True, the --model_path flag must be set to the correct checkpoint')
     args = parser.parse_args()
+
+    if not args.local_dev:
+        _init_(args)
+
+    if args.use_dsva:
+        print("Using DSVA!")
+    else:
+        print("Using Window Attention!")
+
     io = IOStream('checkpoints/' + args.exp_name + '/run.log')
     set_device(args, io)
-
-    #_init_()
     io.cprint(str(args))
-
     torch.manual_seed(args.seed)
+
     trainer = Trainer(args, io)
 
     if not args.eval:

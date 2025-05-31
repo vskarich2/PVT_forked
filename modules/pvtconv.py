@@ -16,7 +16,7 @@ import numpy as np
 # when `from . import module_name` is used.
 __all__ = ['PVTConv','PartPVTConv','SemPVTConv']
 
-from PVT_forked_repo.PVT_forked.modules.voxel_encoder import VoxelEncoder, SegVoxelEncoder
+from modules.voxel_encoder import VoxelEncoder, SegVoxelEncoder
 
 class PVTConv(nn.Module):
     """

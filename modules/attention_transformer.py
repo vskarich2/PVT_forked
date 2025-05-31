@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 
-from PVT_forked_repo.PVT_forked.modules.dsva.dsva_block import DSVABlock
-from PVT_forked_repo.PVT_forked.modules.sboxblock import Sboxblock
+from modules.dsva.dsva_block import DSVABlock
+from modules.sboxblock import Sboxblock
+import constants
 
 
 class Transformer(nn.Module):
@@ -75,6 +76,7 @@ class Transformer(nn.Module):
         """
 
         if self.args.use_dsva:
+            # There is only a single dsva block
             for blk in self.dsva_blocks:
                 x = blk(x, non_empty_mask)
             return x
