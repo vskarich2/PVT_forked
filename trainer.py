@@ -102,7 +102,12 @@ class Trainer():
             train_avg_loss = self.train_one_epoch(epoch, train_loader)
 
             # Test one epoch
-            test_acc = self.test_one_epoch(epoch, test_loader, train_avg_loss)
+            test_acc = self.test_one_epoch(
+                epoch,
+                test_loader,
+                train_avg_loss,
+                best_test_acc
+            )
 
             # Possibly save new checkpoint
             if float(test_acc) >= float(best_test_acc):
@@ -115,7 +120,13 @@ class Trainer():
                 "epoch": epoch
             })
 
-    def test_one_epoch(self, epoch, test_loader, train_avg_loss):
+    def test_one_epoch(
+            self,
+            epoch,
+            test_loader,
+            train_avg_loss,
+            best_test_acc
+    ):
 
         test_loss = 0.0
         count = 0.0
@@ -152,7 +163,15 @@ class Trainer():
         test_bar.close()
 
         # Compute final metrics for epoch
-        test_acc = self.check_stats(count, epoch, test_loss, test_pred, test_true, train_avg_loss)
+        test_acc = self.check_stats(
+            count,
+            epoch,
+            test_loss,
+            test_pred,
+            test_true,
+            train_avg_loss,
+            best_test_acc
+        )
 
         return test_acc
 
@@ -184,9 +203,9 @@ class Trainer():
             running_avg = running_loss / running_count
 
             train_bar.set_postfix({
-                "🔥Avg Loss": f"{running_avg:.4f}🔥",
+                "Avg Loss": f"🔥{running_avg:.4f}🔥",
                 "Batch Loss": f"{curr_loss:.4f}",
-                "Current LR": f"{self.scheduler.get_last_lr()[0]:.6f}"
+                "LR": f"{self.scheduler.get_last_lr()[0]:.3e}"
             })
 
         # Close training bar for this epoch
@@ -212,12 +231,10 @@ class Trainer():
         return save_dir
 
     def save_new_checkpoint(self, epoch, test_acc):
-        model_filename = f"model_epoch_{epoch}_ta_{test_acc}.pth"
+        model_filename = f"model_epoch_{epoch}_testAcc_{test_acc:.4f}.pth"
 
         full_checkpoint_path = os.path.join(self.checkpoint_folder, model_filename)
         os.makedirs(self.checkpoint_folder, exist_ok=True)
-
-        print(f"Saving Checkpoint in Google Drive....{model_filename}")
 
         checkpoint = {
             'epoch': epoch,
@@ -241,18 +258,24 @@ class Trainer():
             test_pred,
             test_true,
             avg_train_loss,
+            best_test_acc
     ):
         test_true = np.concatenate(test_true)
         test_pred = np.concatenate(test_pred)
         test_acc = metrics.accuracy_score(test_true, test_pred)
         avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
 
+        if float(test_acc) > float(best_test_acc):
+            test_acc_str = f"TestAcc=🔥{test_acc:.4f}🔥"
+        else:
+            test_acc_str = f"TestAcc=🔥{test_acc:.4f}🔥✅"
+
         outstr = (
             f"Epoch {epoch + 1:3d}/{self.args.epochs:3d} "
-            f"🔥TrainAvgLoss={avg_train_loss:.4f}🔥 "
+            f"TrainAvgLoss=🔥{avg_train_loss:.4f}🔥 "
             f"TestLoss={(test_loss / count):.4f} "
-            f"🔥TestAcc={test_acc:.4f}🔥 "
-            f"TestAvgPerClassAcc={avg_per_class_acc:.4f}"
+            f"TestAvgPerClassAcc={avg_per_class_acc:.4f} "
+            f"{test_acc_str} "
         )
 
         print(outstr)
