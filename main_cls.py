@@ -20,7 +20,6 @@ def _init_(args):
         os.makedirs('checkpoints')
     if not os.path.exists('checkpoints/' + args.exp_name):
         os.makedirs('checkpoints/' + args.exp_name)
-    os.system('cp main.py checkpoints' + '/' + args.exp_name + '/' + 'main.py.backup')
     os.system('cp model/pvt.py checkpoints' + '/' + args.exp_name + '/' + 'pvt.py.backup')
     os.system('cp util.py checkpoints' + '/' + args.exp_name + '/' + 'util.py.backup')
     os.system('cp data.py checkpoints' + '/' + args.exp_name + '/' + 'data.py.backup')
@@ -31,7 +30,7 @@ def print_os():
     elif sys.platform == 'darwin':
         print("This is a macOS machine.")
     else:
-        print(f"This is a different operating system: {sys.platform}")
+        print(f"This is: {sys.platform}")
 
 def test_for_cuda():
     try:
@@ -63,12 +62,12 @@ def set_device(args, io):
     print_os()
 
     if args.cuda:
-        io.cprint(
+        print(
             'Using GPU : ' + str(torch.cuda.current_device()) + ' from ' + str(torch.cuda.device_count()) + ' devices')
         torch.cuda.manual_seed(args.seed)
-        io.cprint(f'Using cuda')
+        print(f'Using cuda')
     else:
-        io.cprint(f'Using {args.device}')
+        print(f'Using {args.device}')
 
 if __name__ == "__main__":
     # Training settings
@@ -128,9 +127,9 @@ if __name__ == "__main__":
     else:
         print("Using Window Attention!")
 
-    io = IOStream('checkpoints/' + args.exp_name + '/run.log')
+    io = IOStream('checkpoints/' + args.exp_name + '/run.log') # Annoying
     set_device(args, io)
-    io.cprint(str(args))
+    print(str(args))
     torch.manual_seed(args.seed)
 
     trainer = Trainer(args, io)

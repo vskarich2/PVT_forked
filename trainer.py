@@ -57,7 +57,7 @@ class Trainer():
                 test_acc = metrics.accuracy_score(test_true, test_pred)
                 avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
                 outstr = 'Test :: test acc: %.6f, test avg acc: %.6f' % (test_acc, avg_per_class_acc)
-                self.io.cprint(outstr)
+                print(outstr)
 
     def train(self):
 
