@@ -12,6 +12,7 @@ elif sys.platform == 'darwin':
     BASE_DIR = "/Users/vskarich/cs231n_final_project/PVT_forked_repo/PVT_forked"
 else:
     print(f"This is a different operating system: {sys.platform}, could not set BASE_DIR")
+    BASE_DIR = "/content/PVT_forked"
 
 # This is only for local development, there are other DATA_DIR definitions
 # in the code and those are based on the location of the file that defines DATA_DIR,
