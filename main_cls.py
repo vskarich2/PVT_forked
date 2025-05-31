@@ -103,7 +103,7 @@ if __name__ == "__main__":
     parser.add_argument('--debug_verbose', action='store_true', help='Log debug.')
     parser.add_argument('--local_dev', action='store_true', help='Use dev dataset plus other dev-only things.')
     parser.add_argument('--use_checkpoint', action='store_true', help='Load pretrained model from checkpoint. '
-                                                                      'If this flag is True, the --model_path flag must be set to the correct checkpoint')
+                                                                      'If this flag is set, the --model_path flag must be set to the correct checkpoint')
     args = parser.parse_args()
 
 
