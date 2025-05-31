@@ -316,10 +316,14 @@ class Trainer():
         else:
             raise Exception("Not implemented")
         if self.args.use_checkpoint:
+            print(f"Loading checkpoint from Google Drive....{self.args.model_path}")
             model.load_state_dict(
                 torch.load(
                     self.args.model_path, map_location=device),
                 strict=False)
+        else:
+            print(f"NO CHECKPOINT: Loading fresh model!!")
+
         return model
 
     def set_optimizer(self, model):
