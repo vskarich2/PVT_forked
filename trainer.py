@@ -265,7 +265,7 @@ class Trainer():
         test_acc = metrics.accuracy_score(test_true, test_pred)
         avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
 
-        if float(test_acc) > float(best_test_acc):
+        if float(test_acc) < float(best_test_acc):
             test_acc_str = f"TestAcc=🔥{test_acc:.4f}🔥"
         else:
             test_acc_str = f"TestAcc=🔥{test_acc:.4f}🔥✅"
