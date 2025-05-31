@@ -159,8 +159,8 @@ class Trainer():
             running_avg = running_loss / running_count
 
             train_bar.set_postfix({
-                "Avg Loss": f"🔥{running_avg:.6f}🔥",
-                "Batch Loss": f"{curr_loss:.6f}",
+                "🔥Avg Loss": f"{running_avg:.4f}🔥",
+                "Batch Loss": f"{curr_loss:.4f}",
             })
 
         # Close training bar for this epoch
