@@ -5,12 +5,13 @@ import numpy as np
 from PVT_forked_repo.PVT_forked.modules.box_attention import rand_bbox
 from PVT_forked_repo.PVT_forked.modules.attention_transformer import Transformer
 
-def extract_non_empty_voxel_mask(averaged_voxel_features):
+def extract_non_empty_voxel_mask(averaged_voxel_features, args):
     eps = 1e-6
     Bv, C_vox, R_actual, _, _ = averaged_voxel_features.shape
     V = R_actual ** 3
 
-    print(f"[Test] Voxel grid resolution: {R_actual}³ = {V} tokens per object (batch size {Bv})")
+    if args.debug_verbose:
+        print(f"[Test] Voxel grid resolution: {R_actual}³ = {V} tokens per object (batch size {Bv})")
 
     # Flatten (R, R, R) into V = R^3, and permute to (Bv, V, C_vox)
     tokens = averaged_voxel_features.view(Bv, C_vox, V).permute(0, 2, 1)  # (Bv, V, C_vox)
@@ -30,11 +31,14 @@ def extract_non_empty_voxel_mask(averaged_voxel_features):
         indices_b = mask_b.nonzero(as_tuple=False).squeeze(1)  # (V'_b,)
         non_empty_indices_list.append(indices_b)
         non_empty_counts.append(indices_b.numel())
-        print(f"Object {b}: {indices_b.numel()} non-empty voxels out of {V} ({indices_b.numel() / V:.2%})")
+        if args.debug_verbose:
+            print(f"Object {b}: {indices_b.numel()} non-empty voxels out of {V} ({indices_b.numel() / V:.2%})")
 
     # Optional: compute mean occupancy
     mean_count = sum(non_empty_counts) / Bv
-    print(f"\nMean non-empty voxel count per object: {mean_count:.2f} out of {V}")
+
+    if args.debug_verbose:
+        print(f"\nMean non-empty voxel count per object: {mean_count:.2f} out of {V}")
 
     return non_empty_mask
 
@@ -123,7 +127,7 @@ class VoxelEncoder(nn.Module):
         # mask: (B, R^3) - boolean tensor for non-empty voxels
         # This is done here because after featurization through embeddings even
         # empty voxel feature vectors have non-zero magnitudes.
-        non_empty_mask = extract_non_empty_voxel_mask(inputs)
+        non_empty_mask = extract_non_empty_voxel_mask(inputs, self.args)
 
         # Apply the initial 3D convolution.
         inputs = self.voxel_emb(inputs) # Shape: (B, C_out, R, R, R)

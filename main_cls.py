@@ -20,6 +20,20 @@ def _init_():
     os.system('cp util.py checkpoints' + '/' + args.exp_name + '/' + 'util.py.backup')
     os.system('cp data.py checkpoints' + '/' + args.exp_name + '/' + 'data.py.backup')
 
+def test_for_cuda():
+    try:
+        # Try to load one extension!
+        from torch.utils.cpp_extension import load
+        _src_path = os.path.dirname(os.path.abspath(__file__))
+        _backend = load(name='_pvt_backend',
+                        extra_cflags=['-O3', '-std=c++17'],
+                        sources=[os.path.join(_src_path, 'modules', 'functional', 'src', f) for f in [
+                            'interpolate/neighbor_interpolate.cpp'
+                        ]]
+                        )
+    except Exception as e:
+        print(f"Could not build CUDA backend. \nFalling back to CPU stubs.")
+
 def set_device(args, io):
     if not args.no_cuda and torch.cuda.is_available():
         args.device = 'cuda'
@@ -30,6 +44,8 @@ def set_device(args, io):
     else:
         args.device = 'cpu'
         args.cuda = False
+
+    test_for_cuda()
 
     if args.cuda:
         io.cprint(
@@ -50,25 +66,18 @@ if __name__ == "__main__":
     parser.add_argument('--dataset', type=str, default='modelnet40', metavar='N',
                         choices=['modelnet40'])
     parser.add_argument('--batch_size', type=int, default=32, metavar='batch_size',
-                        help='Size of batch)')
+                        help='Size of training batch)')
     parser.add_argument('--test_batch_size', type=int, default=32, metavar='batch_size',
-                        help='Size of batch)')
+                        help='Size of test batch)')
     parser.add_argument('--epochs', type=int, default=200, metavar='N',
                         help='number of episode to train ')
-    parser.add_argument('--use_sgd', type=bool, default=True,
-                        help='Use SGD')
-    parser.add_argument('--use_dsva', type=bool, default=False,
-                        help='Use DSVA')
     parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
                         help='learning rate (default: 0.001, 0.01 if using sgd)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                         help='SGD momentum (default: 0.9)')
-    parser.add_argument('--no_cuda', type=bool, default=False,
-                        help='enables CUDA training')
+
     parser.add_argument('--seed', type=int, default=1, metavar='S',
                         help='random seed (default: 1)')
-    parser.add_argument('--eval', type=bool, default=False,
-                        help='evaluate the model')
     parser.add_argument('--num_points', type=int, default=1024,
                         help='num of points to use')
     parser.add_argument('--num_workers', type=int, default=2,
@@ -77,6 +86,19 @@ if __name__ == "__main__":
                         help='dropout rate')
     parser.add_argument('--model_path', type=str, default='checkpoints/cls/model.t7', metavar='N',
                         help='Pretrained model path')
+
+    # Modified arguments
+    parser.add_argument('--use_sgd', action='store_true',
+                        help='Use SGD')
+    parser.add_argument('--no_cuda', action='store_true',
+                        help='enables CUDA training')
+    parser.add_argument('--eval', action='store_true',
+                        help='evaluate the model')
+
+    # Added arguments
+    parser.add_argument('--use_dsva', action='store_true', help='Use DSVA')
+    parser.add_argument('--use_python_fallback', action='store_true', help='Use python vs. CUDA C++ extensions.')
+    parser.add_argument('--debug_verbose', action='store_true', help='Log debug.')
 
     args = parser.parse_args()
     io = IOStream('checkpoints/' + args.exp_name + '/run.log')

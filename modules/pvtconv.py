@@ -84,7 +84,6 @@ class PVTConv(nn.Module):
         self.SE = SE3d(out_channels)
 
         # SharedTransformer for point-based features: Processes the original point features.
-
         self.point_features = SharedTransformer(in_channels, out_channels)
 
     def forward(self, inputs):
