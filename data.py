@@ -71,10 +71,10 @@ class ModelNetDataLoader(Dataset):
 
         if self.args.local_dev:
             DATA_DIR = os.path.join(BASE_DIR, 'data', 'dev_modelnet40_normal_resampled')
-            print(f"{partition.upper()}: Using local dev dataset: dev_modelnet40_normal_resampled")
+            print(f"{partition.upper()}: Using dataset: dev_modelnet40_normal_resampled")
         else:
             DATA_DIR = os.path.join(BASE_DIR, 'data', 'modelnet40_normal_resampled')
-            print(f"{partition.upper()}: Using non-dev dataset: modelnet40_normal_resampled")
+            print(f"{partition.upper()}: Using dataset: modelnet40_normal_resampled")
 
         self.npoints = npoint
         self.uniform = uniform

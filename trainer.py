@@ -15,11 +15,10 @@ from torch.utils.data import DataLoader
 from util import cal_loss, IOStream
 import sklearn.metrics as metrics
 import provider
+import os
+import datetime
 
 # Define ANSI codes:
-BOLD      = "\x1b[1m"
-RED       = "\x1b[31m"
-RESET     = "\x1b[0m"
 
 class Trainer():
 
@@ -31,6 +30,7 @@ class Trainer():
         self.opt = self.set_optimizer(self.model)
         self.scheduler = CosineAnnealingLR(self.opt, self.args.epochs, eta_min=self.args.lr)
         self.criterion = cal_loss
+        self.checkpoint_counter = 0
 
     def test(self):
         print("Testing Run Starting....")
@@ -65,8 +65,17 @@ class Trainer():
 
     def train(self):
 
-        print("\nTraining Run Starting....\n")
+        print("\nTraining Run Starting....")
 
+        print("Run Hyperparameters:\n")
+        outstr = (
+            f"scheduler=CosineAnnealingLR "
+            f"min_lr={self.args.lr:4d} "
+            f"weight_decay={self.args.weight_decay:4d} "
+            f"num_workers={self.args.num_workers:4d} "
+        )
+        print(outstr)
+        print("Setting up dataloaders...")
         train_loader = self.get_train_loader()
         test_loader = self.get_test_loader()
 
@@ -88,7 +97,7 @@ class Trainer():
             # Possibly save new checkpoint
             if float(test_acc) >= float(best_test_acc):
                 best_test_acc = float(test_acc)
-                self.save_new_checkpoint()
+                self.save_new_checkpoint(epoch, test_acc)
 
     def test_one_epoch(self, epoch, test_loader, train_avg_loss):
 
@@ -161,6 +170,7 @@ class Trainer():
             train_bar.set_postfix({
                 "🔥Avg Loss": f"{running_avg:.4f}🔥",
                 "Batch Loss": f"{curr_loss:.4f}",
+                "Current LR": f"{self.scheduler.get_last_lr()[0]:.6f}"
             })
 
         # Close training bar for this epoch
@@ -169,11 +179,25 @@ class Trainer():
         # Return final average loss value
         return (running_loss / running_count)
 
-    def save_new_checkpoint(self):
-        torch.save(
-            self.model.state_dict(),
-            f"checkpoints/{self.args.exp_name}/model.t7"
-        )
+    def save_new_checkpoint(self, epoch, test_acc):
+        now = datetime.datetime.now()
+        timestamp = now.strftime("%a_%b%d_%Y-%H%M%S")
+        model_filename = f"{timestamp}_epoch_{epoch}_ta_{test_acc}.pth"
+
+        save_dir = f'/content/drive/MyDrive/cs231n_final_project/checkpoints/{self.args.exp_name}'
+        full_checkpoint_path = os.path.join(save_dir, model_filename)
+        os.makedirs(save_dir, exist_ok=True)
+
+        print(f"Saving Checkpoint in Google Drive....{model_filename}")
+        print(f"Google Drive directory....{save_dir}")
+
+        checkpoint = {
+            'epoch': epoch,
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.opt.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict(),
+        }
+        torch.save(checkpoint, full_checkpoint_path)
 
     def preprocess_test_data(self, data, label):
         label = torch.LongTensor(label[:, 0].numpy())
@@ -197,15 +221,13 @@ class Trainer():
 
         outstr = (
             f"Epoch {epoch + 1:3d}/{self.args.epochs:3d} "
-            f"🔥TrainAvgLoss={avg_train_loss:.6f}🔥 "
-            f"TestLoss={(test_loss / count):.6f} "
-            f"🔥TestAcc={test_acc:.6f}🔥 "
-            f"TestAvgPerClassAcc={avg_per_class_acc:.6f}"
+            f"🔥TrainAvgLoss={avg_train_loss:.4f}🔥 "
+            f"TestLoss={(test_loss / count):.4f} "
+            f"🔥TestAcc={test_acc:.4f}🔥 "
+            f"TestAvgPerClassAcc={avg_per_class_acc:.4f}"
         )
 
         print(outstr)
-
-
 
         return test_acc
 
@@ -261,9 +283,18 @@ class Trainer():
 
     def set_optimizer(self, model):
         if self.args.use_sgd:
-            print("Use SGD")
-            opt = optim.SGD(model.parameters(), lr=self.args.lr * 10, momentum=self.args.momentum, weight_decay=1e-4)
+            print("Using SGD")
+            opt = optim.SGD(
+                model.parameters(),
+                lr=self.args.lr * 10,
+                momentum=self.args.momentum,
+                weight_decay=self.args.weight_decay
+            )
         else:
-            print("Use Adam")
-            opt = optim.Adam(model.parameters(), lr=self.args.lr, weight_decay=1e-4)
+            print("Using Adam")
+            opt = optim.Adam(
+                model.parameters(),
+                lr=self.args.lr,
+                weight_decay=self.args.weight_decay
+            )
         return opt
