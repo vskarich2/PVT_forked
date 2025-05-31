@@ -227,6 +227,7 @@ class Trainer():
         dir_name = f'{timestamp}_{attn}_{self.args.dataset}_{self.args.exp_name}'
         save_dir = f'{drive_location}/{dir_name}'
         print(f"Saving checkpoints to....{save_dir}")
+        print("When you see the ✅ it means the checkpoint was saved!!")
 
         return save_dir
 
