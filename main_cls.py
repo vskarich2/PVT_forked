@@ -96,6 +96,8 @@ if __name__ == "__main__":
 
 
     # Added arguments
+    parser.add_argument('--weight_decay', type=float, default=1e-4,
+                        help='Weight decay (L2 penalty)')
     parser.add_argument('--use_dsva', action='store_true', help='Use DSVA')
     parser.add_argument('--use_python_fallback', action='store_true', help='Use python vs. CUDA C++ extensions.')
     parser.add_argument('--debug_verbose', action='store_true', help='Log debug.')
