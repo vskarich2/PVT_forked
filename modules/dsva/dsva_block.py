@@ -1,8 +1,8 @@
 import torch.nn as nn
 from timm.layers import DropPath
 
-from PVT_forked_repo.PVT_forked.modules.dsva.dsva_cross_attention import SparseDynamicVoxelAttention
-from PVT_forked_repo.PVT_forked.modules.feed_forward import FeedForward
+from modules.dsva.dsva_cross_attention import SparseDynamicVoxelAttention
+from modules.feed_forward import FeedForward
 
 import torch
 

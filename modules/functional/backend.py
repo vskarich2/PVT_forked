@@ -1,5 +1,7 @@
 import warnings
 import os
+import torch
+from modules.functional.python_fallback import *
 
 try:
     from torch.utils.cpp_extension import load
@@ -19,7 +21,7 @@ try:
                     ]]
                     )
 except Exception as e:
-    from PVT_forked_repo.PVT_forked.modules.functional.python_fallback import *
+    from modules.functional.python_fallback import *
 
     class CPUBackend:
 

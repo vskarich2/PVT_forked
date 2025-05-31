@@ -3,8 +3,8 @@ import torch.nn as nn
 import numpy as np
 from timm.layers import DropPath
 
-from PVT_forked_repo.PVT_forked.modules.box_attention import BoxAttention
-from PVT_forked_repo.PVT_forked.modules.feed_forward import FeedForward
+from modules.box_attention import BoxAttention
+from modules.feed_forward import FeedForward
 
 class Sboxblock(nn.Module):
     """
