@@ -40,6 +40,8 @@ class Trainer():
             name=self.checkpoint_folder,
             config={  # optional dictionary of hyperparameters
                 "learning_rate": self.args.lr,
+                "scheduler": "CosineAnnealingLR",
+                "weight_decay": self.args.weight_decay,
                 "batch_size": self.args.batch_size,
                 "epochs": self.args.epochs
             }
@@ -83,14 +85,6 @@ class Trainer():
 
         print("\nTraining Run Starting....")
 
-        print("Run Hyperparameters:\n")
-        outstr = (
-            f"scheduler=CosineAnnealingLR "
-            f"min_lr={self.args.lr:4d} "
-            f"weight_decay={self.args.weight_decay:4d} "
-            f"num_workers={self.args.num_workers:4d} "
-        )
-        print(outstr)
         print("Setting up dataloaders...")
         train_loader = self.get_train_loader()
         test_loader = self.get_test_loader()
