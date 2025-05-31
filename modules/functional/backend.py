@@ -1,6 +1,7 @@
 import warnings
 import os
 import torch
+import traceback
 from modules.functional.python_fallback import *
 
 try:
@@ -21,6 +22,10 @@ try:
                     ]]
                     )
 except Exception as e:
+    error_msg = traceback.format_exc()
+    print(f"Could not build CUDA backend. \nFalling back to CPU stubs.")
+    print(error_msg)
+
     from modules.functional.python_fallback import *
 
     class CPUBackend:
