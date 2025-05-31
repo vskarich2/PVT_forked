@@ -204,8 +204,8 @@ class Trainer():
         test_acc = f"{BOLD}{RED}{test_acc:.6f}{RESET}"
         
         outstr = (
-            f"TrainAvgLoss={avg_train_loss} "
             f"Epoch {epoch + 1:3d}/{self.args.epochs:3d} "
+            f"TrainAvgLoss={avg_train_loss} "
             f"TestLoss={(test_loss / count):.6f} "
             f"TestAcc={test_acc} "
             f"TestAvgPerClassAcc={avg_per_class_acc:.6f}"
