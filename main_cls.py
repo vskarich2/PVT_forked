@@ -32,19 +32,6 @@ def print_os():
     else:
         print(f"This is: {sys.platform}")
 
-def test_for_cuda():
-    try:
-        # Try to load one extension!
-        from torch.utils.cpp_extension import load
-        _src_path = os.path.dirname(os.path.abspath(__file__))
-        _backend = load(name='_pvt_backend',
-                        extra_cflags=['-O3', '-std=c++17'],
-                        sources=[os.path.join(_src_path, 'modules', 'functional', 'src', f) for f in [
-                            'interpolate/neighbor_interpolate.cpp'
-                        ]]
-                        )
-    except Exception as e:
-        print(f"Could not build CUDA backend. \nFalling back to CPU stubs.")
 
 def set_device(args, io):
     if not args.no_cuda and torch.cuda.is_available():
@@ -57,13 +44,11 @@ def set_device(args, io):
         args.device = 'cpu'
         args.cuda = False
 
-    #test_for_cuda()
-
     print_os()
 
     if args.cuda:
         print(
-            'Using GPU : ' + str(torch.cuda.current_device()) + ' from ' + str(torch.cuda.device_count()) + ' devices')
+            'Using GPU : id:' + str(torch.cuda.current_device()) + ' from ' + str(torch.cuda.device_count()) + ' device')
         torch.cuda.manual_seed(args.seed)
         print(f'Using cuda')
     else:
@@ -129,7 +114,7 @@ if __name__ == "__main__":
 
     io = IOStream('checkpoints/' + args.exp_name + '/run.log') # Annoying
     set_device(args, io)
-    print(str(args))
+    print(f"\n{str(args)}\n")
     torch.manual_seed(args.seed)
 
     trainer = Trainer(args, io)
