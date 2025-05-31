@@ -16,6 +16,10 @@ from util import cal_loss, IOStream
 import sklearn.metrics as metrics
 import provider
 
+# Define ANSI codes:
+BOLD      = "\x1b[1m"
+RED       = "\x1b[31m"
+RESET     = "\x1b[0m"
 
 class Trainer():
 
@@ -154,10 +158,14 @@ class Trainer():
             running_count += 1.0
             running_avg = running_loss / running_count
 
+            # Wrap the numbers in ANSI codes:
+            red_bold_loss = f"{BOLD}{RED}{curr_loss:.6f}{RESET}"
+            red_bold_avg = f"{BOLD}{RED}{running_avg:.6f}{RESET}"
+
             # 3) Push into tqdm postfix
             train_bar.set_postfix({
-                "Batch Loss": f"{curr_loss:.6f}",
-                "Avg. Loss": f"{running_avg:.6f}"
+                "Batch Loss": red_bold_loss,
+                "Avg. Loss": red_bold_avg
             })
 
         # Close training bar for this epoch
@@ -192,11 +200,14 @@ class Trainer():
         test_acc = metrics.accuracy_score(test_true, test_pred)
         avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
 
+        avg_train_loss = f"{BOLD}{RED}{avg_train_loss:.6f}{RESET}"
+        test_acc = f"{BOLD}{RED}{test_acc:.6f}{RESET}"
+        
         outstr = (
-            f"TrainAvgLoss={avg_train_loss:.6f} "
+            f"TrainAvgLoss={avg_train_loss} "
             f"Epoch {epoch + 1:3d}/{self.args.epochs:3d} "
             f"TestLoss={(test_loss / count):.6f} "
-            f"TestAcc={test_acc:.6f} "
+            f"TestAcc={test_acc} "
             f"TestAvgPerClassAcc={avg_per_class_acc:.6f}"
         )
 
