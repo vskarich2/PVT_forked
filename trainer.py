@@ -1,5 +1,5 @@
 from __future__ import print_function
-from tqdm import tqdm, trange
+from tqdm.notebook import tqdm, trange
 import warnings
 # ignore everything
 warnings.filterwarnings("ignore")

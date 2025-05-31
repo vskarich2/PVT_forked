@@ -106,7 +106,7 @@ if __name__ == "__main__":
     parser.add_argument('--use_sgd', action='store_true',
                         help='Use SGD')
     parser.add_argument('--no_cuda', action='store_true',
-                        help='enables CUDA training')
+                        help='if --no_cuda is set, model will run on CPU.')
     parser.add_argument('--eval', action='store_true',
                         help='evaluate the model')
 
