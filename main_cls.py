@@ -122,6 +122,6 @@ if __name__ == "__main__":
     trainer = Trainer(args, io)
 
     if not args.eval:
-        trainer.train()
+        trainer.fit()
     else:
         trainer.test()
