@@ -57,7 +57,7 @@ def set_device(args, io):
         args.device = 'cpu'
         args.cuda = False
 
-    test_for_cuda()
+    #test_for_cuda()
 
     print_os()
 
@@ -119,8 +119,8 @@ if __name__ == "__main__":
                                                                       'If this flag is True, the --model_path flag must be set to the correct checkpoint')
     args = parser.parse_args()
 
-    if not args.local_dev:
-        _init_(args)
+
+    _init_(args)
 
     if args.use_dsva:
         print("Using DSVA!")
