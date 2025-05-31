@@ -17,6 +17,7 @@ import sklearn.metrics as metrics
 import provider
 import os
 import datetime
+import wandb
 
 # Define ANSI codes:
 
@@ -30,7 +31,22 @@ class Trainer():
         self.opt = self.set_optimizer(self.model)
         self.scheduler = CosineAnnealingLR(self.opt, self.args.epochs, eta_min=self.args.lr)
         self.criterion = cal_loss
-        self.checkpoint_counter = 0
+        self.checkpoint_folder = self.create_checkpoint_folder_name()
+        self.start_wandb()
+
+    def start_wandb(self):
+        wandb.init(
+            project="cs231n_final_project",
+            name=self.checkpoint_folder,
+            config={  # optional dictionary of hyperparameters
+                "learning_rate": self.args.lr,
+                "batch_size": self.args.batch_size,
+                "epochs": self.args.epochs
+            }
+        )
+        
+        # This logs weights and gradients every epoch
+        wandb.watch(self.model, log="all", log_freq=1)
 
     def test(self):
         print("Testing Run Starting....")
@@ -63,7 +79,7 @@ class Trainer():
                 outstr = 'Test :: test acc: %.6f, test avg acc: %.6f' % (test_acc, avg_per_class_acc)
                 print(outstr)
 
-    def train(self):
+    def fit(self):
 
         print("\nTraining Run Starting....")
 
@@ -98,6 +114,11 @@ class Trainer():
             if float(test_acc) >= float(best_test_acc):
                 best_test_acc = float(test_acc)
                 self.save_new_checkpoint(epoch, test_acc)
+
+            wandb.log({
+                "train/TrainAvgLoss": train_avg_loss,
+                "epoch": epoch
+            })
 
     def test_one_epoch(self, epoch, test_loader, train_avg_loss):
 
@@ -179,17 +200,29 @@ class Trainer():
         # Return final average loss value
         return (running_loss / running_count)
 
-    def save_new_checkpoint(self, epoch, test_acc):
+    def create_checkpoint_folder_name(self):
         now = datetime.datetime.now()
         timestamp = now.strftime("%a_%b%d_%Y-%H%M%S")
-        model_filename = f"{timestamp}_epoch_{epoch}_ta_{test_acc}.pth"
+        drive_location = "/content/drive/MyDrive/cs231n_final_project/checkpoints"
 
-        save_dir = f'/content/drive/MyDrive/cs231n_final_project/checkpoints/{self.args.exp_name}'
-        full_checkpoint_path = os.path.join(save_dir, model_filename)
-        os.makedirs(save_dir, exist_ok=True)
+        if self.args.use_dsva:
+            attn = "dsva"
+        else:
+            attn = "window"
+
+        dir_name = f'{timestamp}_{attn}_{self.args.dataset}_{self.args.exp_name}'
+        save_dir = f'{drive_location}/{dir_name}'
+        print(f"Saving checkpoints to....{save_dir}")
+
+        return save_dir
+
+    def save_new_checkpoint(self, epoch, test_acc):
+        model_filename = f"model_epoch_{epoch}_ta_{test_acc}.pth"
+
+        full_checkpoint_path = os.path.join(self.checkpoint_folder, model_filename)
+        os.makedirs(self.checkpoint_folder, exist_ok=True)
 
         print(f"Saving Checkpoint in Google Drive....{model_filename}")
-        print(f"Google Drive directory....{save_dir}")
 
         checkpoint = {
             'epoch': epoch,
@@ -228,6 +261,13 @@ class Trainer():
         )
 
         print(outstr)
+
+        wandb.log({
+            "test/TestAcc": test_acc,
+            "test/TestLoss": (test_loss / count),
+            "test/TestAvgPerClassAcc": avg_per_class_acc,
+            "epoch": epoch
+        })
 
         return test_acc
 
