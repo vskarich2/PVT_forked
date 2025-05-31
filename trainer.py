@@ -70,7 +70,7 @@ class Trainer():
         train_loader = self.get_train_loader()
         test_loader = self.get_test_loader()
 
-        best_test_acc = 0
+        best_test_acc = 0.0
 
         # Outer epoch loop with trange
         for epoch in trange(
@@ -86,8 +86,8 @@ class Trainer():
             test_acc = self.test_one_epoch(epoch, test_loader, train_avg_loss)
 
             # Possibly save new checkpoint
-            if test_acc >= best_test_acc:
-                best_test_acc = test_acc
+            if float(test_acc) >= float(best_test_acc):
+                best_test_acc = float(test_acc)
                 self.save_new_checkpoint()
 
     def test_one_epoch(self, epoch, test_loader, train_avg_loss):
@@ -159,8 +159,8 @@ class Trainer():
             running_avg = running_loss / running_count
 
             train_bar.set_postfix({
-                "Batch Loss": f"{curr_loss:.6f}",
-                "Avg. Loss": f"{running_avg:.6f}"
+                "Batch Loss  ": f"{curr_loss:.6f}",
+                "Avg Loss  ": f"{running_avg:.6f}"
             })
 
         # Close training bar for this epoch
@@ -195,14 +195,11 @@ class Trainer():
         test_acc = metrics.accuracy_score(test_true, test_pred)
         avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
 
-        avg_train_loss = f"{avg_train_loss:.6f}"
-        test_acc = f"{test_acc:.6f}"
-
         outstr = (
             f"Epoch {epoch + 1:3d}/{self.args.epochs:3d} "
-            f"TrainAvgLoss={avg_train_loss} "
+            f"TrainAvgLoss={avg_train_loss:.6f} "
             f"TestLoss={(test_loss / count):.6f} "
-            f"TestAcc={test_acc} "
+            f"TestAcc={test_acc:.6f} "
             f"TestAvgPerClassAcc={avg_per_class_acc:.6f}"
         )
 
