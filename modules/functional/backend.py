@@ -1,5 +1,6 @@
 import warnings
 import os
+
 try:
     from torch.utils.cpp_extension import load
     _src_path = os.path.dirname(os.path.abspath(__file__))
@@ -19,7 +20,7 @@ try:
                     )
 except Exception as e:
     from PVT_forked_repo.PVT_forked.modules.functional.python_fallback import *
-    warnings.warn(f"Could not build CUDA backend: {e}\nFalling back to CPU stubs.")
+
     class CPUBackend:
 
         @staticmethod
