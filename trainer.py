@@ -158,14 +158,9 @@ class Trainer():
             running_count += 1.0
             running_avg = running_loss / running_count
 
-            # Wrap the numbers in ANSI codes:
-            red_bold_loss = f"{BOLD}{RED}{curr_loss:.6f}{RESET}"
-            red_bold_avg = f"{BOLD}{RED}{running_avg:.6f}{RESET}"
-
-            # 3) Push into tqdm postfix
             train_bar.set_postfix({
-                "Batch Loss": red_bold_loss,
-                "Avg. Loss": red_bold_avg
+                "Batch Loss": f"{curr_loss:.6f}",
+                "Avg. Loss": f"{running_avg:.6f}"
             })
 
         # Close training bar for this epoch
@@ -200,9 +195,9 @@ class Trainer():
         test_acc = metrics.accuracy_score(test_true, test_pred)
         avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
 
-        avg_train_loss = f"{BOLD}{RED}{avg_train_loss:.6f}{RESET}"
-        test_acc = f"{BOLD}{RED}{test_acc:.6f}{RESET}"
-        
+        avg_train_loss = f"{avg_train_loss:.6f}"
+        test_acc = f"{test_acc:.6f}"
+
         outstr = (
             f"Epoch {epoch + 1:3d}/{self.args.epochs:3d} "
             f"TrainAvgLoss={avg_train_loss} "
