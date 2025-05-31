@@ -159,8 +159,8 @@ class Trainer():
             running_avg = running_loss / running_count
 
             train_bar.set_postfix({
+                "Avg Loss": f"🔥{running_avg:.6f}🔥",
                 "Batch Loss": f"{curr_loss:.6f}",
-                "Avg Loss": f"{running_avg:.6f}"
             })
 
         # Close training bar for this epoch
@@ -197,9 +197,9 @@ class Trainer():
 
         outstr = (
             f"Epoch {epoch + 1:3d}/{self.args.epochs:3d} "
-            f"TrainAvgLoss={avg_train_loss:.6f} "
+            f"🔥TrainAvgLoss={avg_train_loss:.6f}🔥 "
             f"TestLoss={(test_loss / count):.6f} "
-            f"TestAcc={test_acc:.6f} "
+            f"🔥TestAcc={test_acc:.6f}🔥 "
             f"TestAvgPerClassAcc={avg_per_class_acc:.6f}"
         )
 
