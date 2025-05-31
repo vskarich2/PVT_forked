@@ -204,7 +204,7 @@ class Trainer():
     def create_checkpoint_folder_name(self):
         now = datetime.datetime.now()
         timestamp = now.strftime("%a_%b%d_%Y-%H%M%S")
-        drive_location = "/content/drive/MyDrive/cs231n_final_project/checkpoints"
+        drive_location = "/content/drive/My Drive/cs231n_final_project/checkpoints"
 
         if self.args.use_dsva:
             attn = "dsva"
