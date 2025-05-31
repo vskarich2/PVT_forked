@@ -61,7 +61,7 @@ class Trainer():
 
     def train(self):
 
-        print("Training Run Starting....")
+        print("\nTraining Run Starting....\n")
 
         train_loader = self.get_train_loader()
         test_loader = self.get_test_loader()
@@ -76,17 +76,17 @@ class Trainer():
                 unit="epoch"
         ):
             # Train one epoch
-            self.train_one_epoch(epoch, train_loader)
+            train_avg_loss = self.train_one_epoch(epoch, train_loader)
 
             # Test one epoch
-            test_acc = self.test_one_epoch(epoch, test_loader)
+            test_acc = self.test_one_epoch(epoch, test_loader, train_avg_loss)
 
             # Possibly save new checkpoint
             if test_acc >= best_test_acc:
                 best_test_acc = test_acc
                 self.save_new_checkpoint()
 
-    def test_one_epoch(self, epoch, test_loader):
+    def test_one_epoch(self, epoch, test_loader, train_avg_loss):
 
         test_loss = 0.0
         count = 0.0
@@ -107,10 +107,11 @@ class Trainer():
 
                 logits = self.model(data)
                 loss = self.criterion(logits, label)
+                test_loss += loss.item()
 
                 preds = logits.max(dim=1)[1]
-                count += self.args.test_batch_size
-                test_loss += loss.item() * self.args.test_batch_size
+
+                count += 1.0
                 test_true.append(label.cpu().numpy())
                 test_pred.append(preds.detach().cpu().numpy())
 
@@ -121,8 +122,9 @@ class Trainer():
         # Close test bar for this epoch
         test_bar.close()
 
-        # Compute final test metrics
-        test_acc = self.check_stats(count, epoch, test_loss, test_pred, test_true)
+        # Compute final metrics for epoch
+        test_acc = self.check_stats(count, epoch, test_loss, test_pred, test_true, train_avg_loss)
+
         return test_acc
 
     def train_one_epoch(self, epoch, train_loader):
@@ -136,20 +138,33 @@ class Trainer():
             leave=False,
             unit="batch"
         )
+        running_loss = 0.0
+        running_count = 0.0
 
         for data, label in train_bar:
             data, label = self.preprocess_data(data, label)
             self.opt.zero_grad()
             logits = self.model(data)
             loss = self.criterion(logits, label)
+            curr_loss = loss.item()
             loss.backward()
             self.opt.step()
 
-            # Update train_bar with current loss
-            train_bar.set_postfix(batch_loss=f"{loss.item():.6f}")
+            running_loss += curr_loss
+            running_count += 1.0
+            running_avg = running_loss / running_count
+
+            # 3) Push into tqdm postfix
+            train_bar.set_postfix({
+                "Batch Loss": f"{curr_loss:.6f}",
+                "Avg. Loss": f"{running_avg:.6f}"
+            })
 
         # Close training bar for this epoch
         train_bar.close()
+
+        # Return final average loss value
+        return (running_loss / running_count)
 
     def save_new_checkpoint(self):
         torch.save(
@@ -163,20 +178,31 @@ class Trainer():
         data = data.permute(0, 2, 1)
         return data, label
 
-    def check_stats(self, count, epoch, test_loss, test_pred, test_true):
+    def check_stats(
+            self,
+            count,
+            epoch,
+            test_loss,
+            test_pred,
+            test_true,
+            avg_train_loss,
+    ):
         test_true = np.concatenate(test_true)
         test_pred = np.concatenate(test_pred)
         test_acc = metrics.accuracy_score(test_true, test_pred)
         avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
 
         outstr = (
+            f"TrainAvgLoss={avg_train_loss:.6f} "
             f"Epoch {epoch + 1:3d}/{self.args.epochs:3d} "
             f"TestLoss={(test_loss / count):.6f} "
             f"TestAcc={test_acc:.6f} "
-            f"TestAvgAcc={avg_per_class_acc:.6f}"
+            f"TestAvgPerClassAcc={avg_per_class_acc:.6f}"
         )
 
-        self.io.cprint(outstr)
+        print(outstr)
+
+
 
         return test_acc
 
