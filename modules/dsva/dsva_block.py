@@ -1,14 +1,11 @@
-import torch
 import torch.nn as nn
-import numpy as np
 from timm.layers import DropPath
 
-from PVT_forked_repo.PVT_forked.modules.box_attention import BoxAttention
-from PVT_forked_repo.PVT_forked.modules.dsva_cross_attention import SparseDynamicVoxelAttention
+from PVT_forked_repo.PVT_forked.modules.dsva.dsva_cross_attention import SparseDynamicVoxelAttention
 from PVT_forked_repo.PVT_forked.modules.feed_forward import FeedForward
 
 import torch
-from torch_cluster import knn_graph
+
 
 def map_sparse_to_dense(updated_tokens, non_empty_mask, V, D):
     """
@@ -30,16 +27,6 @@ def map_sparse_to_dense(updated_tokens, non_empty_mask, V, D):
         dense_tokens[b, non_empty_mask[b]] = updated_tokens[b]
 
     return dense_tokens
-
-def extract_non_empty_voxel_mask(voxel_tokens):
-    """
-    Args:
-        voxel_tokens (B, R^3, D): token embeddings
-    """
-
-    non_empty_mask = voxel_tokens.abs().sum(dim=2) > 0
-
-    return non_empty_mask
 
 def generate_voxel_grid_centers(resolution, args):
     """
@@ -71,6 +58,17 @@ def generate_voxel_grid_centers(resolution, args):
     voxel_centers = grid.unsqueeze(0).expand(args.batch_size, -1, -1)  # shape: (B, R^3, 3)
     return voxel_centers.to(args.device)
 
+def reconstruct_dense_masked_scatter(updated_list, mask, original):
+    # 1) Clone the original so we don’t overwrite it in-place (optional)
+    out = original.clone()
+
+    B, V, C = original.shape
+    for b in range(B):
+        # Note that mask[b].sum() == updated_list[b].size(0) == Vb
+        out[b, mask[b], :] = updated_list[b]
+
+    return out
+
 class DSVABlock(nn.Module):
     """
     A single DSVA block
@@ -101,7 +99,12 @@ class DSVABlock(nn.Module):
         self.dim_head = self.out_channels // self.heads # Dimension per head
 
         # Initialize the DSVA Cross Attention module.
-        self.attn  = SparseDynamicVoxelAttention(dim=64, num_heads=4, k_knn=10, k_select=4)
+        self.attn  = SparseDynamicVoxelAttention(
+            dim=self.out_channels,
+            num_heads=self.heads,
+            knn_size=10,
+            top_k_select=4
+        )
 
         # Layer Normalization layers. Applied before attention and MLP.
         self.norm1 = nn.LayerNorm(out_channels) # For input to attention
@@ -115,7 +118,7 @@ class DSVABlock(nn.Module):
         # in the network are randomly dropped during training.
         self.drop_path = DropPath(drop_path)
 
-    def forward(self, voxel_tokens, averaged_voxel_tokens):
+    def forward(self, voxel_tokens, non_empty_mask):
         """
         Performs the forward pass of the DSVABlock.
 
@@ -129,18 +132,15 @@ class DSVABlock(nn.Module):
         # Apply LayerNorm to the voxel_tokens.
         voxel_tokens = self.norm1(voxel_tokens)
 
-        # Apply DSVA Attention
-
         # voxel_coords: (B, R^3, 3) - voxel centers
         voxel_coords = generate_voxel_grid_centers(self.resolution, self.args)
 
-        # mask: (B, R^3) - boolean tensor for non-empty voxels
-        non_empty_mask = extract_non_empty_voxel_mask(voxel_tokens)
+        # Apply DSVA Attention
+        enriched_tokens = self.attn(voxel_tokens, voxel_coords, non_empty_mask)
 
-        non_empty_count = non_empty_mask.sum(dim=1)
-        print(f"Non-empty voxels in first input object: {non_empty_count[0].item()} out of {self.resolution ** 3}")
-
-        x = self.attn(voxel_tokens, voxel_coords, non_empty_mask)
+        # Need to reshape list of enriched token tensors
+        # to flattened (B, R^3, C) for subsequent operations.
+        x = reconstruct_dense_masked_scatter(enriched_tokens, non_empty_mask, voxel_tokens)
 
         # First residual connection and DropPath.
         # Applies DropPath to the attention output, scales by 0.5 (common in some architectures),

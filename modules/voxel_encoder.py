@@ -5,6 +5,39 @@ import numpy as np
 from PVT_forked_repo.PVT_forked.modules.box_attention import rand_bbox
 from PVT_forked_repo.PVT_forked.modules.attention_transformer import Transformer
 
+def extract_non_empty_voxel_mask(averaged_voxel_features):
+    eps = 1e-6
+    Bv, C_vox, R_actual, _, _ = averaged_voxel_features.shape
+    V = R_actual ** 3
+
+    print(f"[Test] Voxel grid resolution: {R_actual}³ = {V} tokens per object (batch size {Bv})")
+
+    # Flatten (R, R, R) into V = R^3, and permute to (Bv, V, C_vox)
+    tokens = averaged_voxel_features.view(Bv, C_vox, V).permute(0, 2, 1)  # (Bv, V, C_vox)
+
+    # Compute L2 norm of each voxel token: shape (Bv, V)
+    token_norms = tokens.norm(dim=-1)
+
+    # Create boolean mask where norm > eps (non-empty): shape (Bv, V)
+    non_empty_mask = token_norms > eps
+
+    # Get non-empty voxel indices and counts per batch item
+    non_empty_indices_list = []
+    non_empty_counts = []
+
+    for b in range(Bv):
+        mask_b = non_empty_mask[b]  # (V,)
+        indices_b = mask_b.nonzero(as_tuple=False).squeeze(1)  # (V'_b,)
+        non_empty_indices_list.append(indices_b)
+        non_empty_counts.append(indices_b.numel())
+        print(f"Object {b}: {indices_b.numel()} non-empty voxels out of {V} ({indices_b.numel() / V:.2%})")
+
+    # Optional: compute mean occupancy
+    mean_count = sum(non_empty_counts) / Bv
+    print(f"\nMean non-empty voxel count per object: {mean_count:.2f} out of {V}")
+
+    return non_empty_mask
+
 
 class VoxelEncoder(nn.Module):
     """
@@ -74,7 +107,7 @@ class VoxelEncoder(nn.Module):
             self.args
         )
 
-    def forward(self, inputs, averaged_voxel_tokens):
+    def forward(self, inputs):
         """
         Performs the forward pass of the VoxelEncoder.
 
@@ -84,6 +117,14 @@ class VoxelEncoder(nn.Module):
         Returns:
             torch.Tensor: Encoded voxel features of shape (B, C_out, R, R, R).
         """
+
+        # Create the empty voxel mask before inputs are enriched
+
+        # mask: (B, R^3) - boolean tensor for non-empty voxels
+        # This is done here because after featurization through embeddings even
+        # empty voxel feature vectors have non-zero magnitudes.
+        non_empty_mask = extract_non_empty_voxel_mask(inputs)
+
         # Apply the initial 3D convolution.
         inputs = self.voxel_emb(inputs) # Shape: (B, C_out, R, R, R)
 
@@ -104,7 +145,9 @@ class VoxelEncoder(nn.Module):
 
         # Pass the features through the Transformer where
         # both fixed-window attention and dynamic sparse attention live
-        x = self.voxel_Trasformer(x, averaged_voxel_tokens) # Shape: (B, R^3, C_out)
+        # non_empty_mask => (B, R^3)
+        # x => (B, R^3, C_out), x is the embedded voxel token sequence
+        x = self.voxel_Trasformer(x, non_empty_mask)
 
         # Reshape the output from the Transformer back to 3D voxel grid format.
         x = torch.reshape(x, (-1, self.resolution, self.resolution, self.resolution, self.out_channels))
