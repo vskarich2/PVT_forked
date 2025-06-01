@@ -163,60 +163,62 @@ class Trainer():
 
     def preprocess_data(self, data, label):
         """
-        For ModelNet40: `data` has shape (B, N, 6) → features = (B, 6, N), coords = (B, 3, N).
-        For ScanObjectNN: `data` has shape (B, N, 3) → both features and coords = (B, 3, N).
+        For ModelNet40: `data` has shape (B, N, 6) → outputs:
+            feats  = (B, 6, N), coords = (B, 3, N).
+        For ScanObjectNN: `data` has shape (B, N, 3) → outputs:
+            feats  = coords = (B, 3, N).
         """
-        # 1) Move to NumPy, apply point‐cloud augmentations (dropout/scale/shift)
-        data_np = data.numpy()  # shape = (B, N, C), C=6 for ModelNet40, C=3 for ScanObjectNN
+        # 1) Apply augmentations in NumPy
+        data_np = data.numpy()                            # (B, N, C)
         data_np = provider.random_point_dropout(data_np)
         data_np[:, :, 0:3] = provider.random_scale_point_cloud(data_np[:, :, 0:3])
         data_np[:, :, 0:3] = provider.shift_point_cloud(data_np[:, :, 0:3])
-    
-        # 2) Convert back to Tensor, then split into (features, coords) depending on dataset
-        data_t = torch.from_numpy(data_np.astype('float32'))  # shape = (B, N, C)
-    
+
+        # 2) Convert back to a Tensor
+        data_t = torch.from_numpy(data_np.astype('float32'))  # (B, N, C)
+
+        # 3) Split into (feats, coords) per dataset
         if self.args.dataset == 'modelnet40':
-            # ModelNet40: first 6 dims are (XYZ + normals)
-            feats  = data_t.permute(0, 2, 1).to(self.device)       # (B, 6, N)
+            feats  = data_t.permute(0, 2, 1).to(self.device)         # (B, 6, N)
             coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
         elif self.args.dataset == 'scanobjectnn':
-            # ScanObjectNN: only XYZ (C=3), so features = coords = that same (B, 3, N)
-            coords = data_t.permute(0, 2, 1).to(self.device)       # (B, 3, N)
-            feats  = coords.clone()                                # (B, 3, N)
+            coords = data_t.permute(0, 2, 1).to(self.device)         # (B, 3, N)
+            feats  = coords.clone()                                  # (B, 3, N)
         else:
             raise ValueError(f"Unsupported dataset: {self.args.dataset}")
-    
-        # 3) Convert label to LongTensor of shape (B,)
-        label_tensor = torch.LongTensor(label).to(self.device)
-    
+
+        # 4) Convert label to a 1D LongTensor
+        label_tensor = torch.LongTensor(label).to(self.device)     # (B,)
+
         return (feats, coords), label_tensor
-    
 
     def preprocess_test_data(self, data, label):
         """
-        Same splitting logic as preprocess_data, but with no augmentations.
+        Same splitting logic but no augmentations.
         """
-        data_np = data.numpy()                           # (B, N, C)
-        data_t  = torch.from_numpy(data_np.astype('float32'))
-    
+        data_np = data.numpy()                                       # (B, N, C)
+        data_t  = torch.from_numpy(data_np.astype('float32'))       # (B, N, C)
+
         if self.args.dataset == 'modelnet40':
-            feats  = data_t.permute(0, 2, 1).to(self.device)       # (B, 6, N)
+            feats  = data_t.permute(0, 2, 1).to(self.device)         # (B, 6, N)
             coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
         elif self.args.dataset == 'scanobjectnn':
-            coords = data_t.permute(0, 2, 1).to(self.device)       # (B, 3, N)
-            feats  = coords.clone()                                # (B, 3, N)
+            coords = data_t.permute(0, 2, 1).to(self.device)         # (B, 3, N)
+            feats  = coords.clone()                                  # (B, 3, N)
         else:
             raise ValueError(f"Unsupported dataset: {self.args.dataset}")
-    
-        label_tensor = torch.LongTensor(label).to(self.device)  # (B,)
-    
+
+        label_tensor = torch.LongTensor(label).to(self.device)       # (B,)
+
         return (feats, coords), label_tensor
 
     def train_one_epoch(self, epoch, train_loader):
+        self.scheduler.step()
         self.model.train()
+
         train_bar = tqdm(
             train_loader,
-            desc=f"Training (Epoch {epoch + 1}/{self.args.epochs})",
+            desc=f"Training (Epoch {epoch+1}/{self.args.epochs})",
             leave=False,
             unit="batch"
         )
@@ -224,27 +226,28 @@ class Trainer():
         running_count = 0.0
 
         for data, label in train_bar:
-            data, label = self.preprocess_data(data, label)
+            # Unpack into (feats, coords) and label_tensor
+            (feats, coords), label_tensor = self.preprocess_data(data, label)
+
             self.opt.zero_grad()
-            logits = self.model(data)
-            loss = self.criterion(logits, label)
-            curr_loss = loss.item()
+            logits = self.model(feats, coords)         # pass both feats and coords
+            loss = self.criterion(logits, label_tensor)
             loss.backward()
             self.opt.step()
 
+            curr_loss = loss.item()
             running_loss += curr_loss
             running_count += 1.0
             running_avg = running_loss / running_count
 
-            current_lr = self.scheduler.get_last_lr()[0]
             train_bar.set_postfix({
-                "Avg Loss": f"🔥{running_avg:.4f}🔥",
+                "Avg Loss": f"{running_avg:.4f}",
                 "Batch Loss": f"{curr_loss:.4f}",
-                "LR": f"{current_lr:.3e}"
+                "LR": f"{self.scheduler.get_last_lr()[0]:.3e}"
             })
 
         train_bar.close()
-        return (running_loss / running_count)
+        return running_loss / running_count
 
     def test_one_epoch(self, epoch, test_loader, train_avg_loss, best_test_acc):
         test_loss = 0.0
@@ -255,21 +258,23 @@ class Trainer():
 
         test_bar = tqdm(
             test_loader,
-            desc=f"Testing  (Epoch {epoch + 1}/{self.args.epochs})",
+            desc=f"Testing  (Epoch {epoch+1}/{self.args.epochs})",
             leave=False,
             unit="batch"
         )
         with torch.no_grad():
             for data, label in test_bar:
-                data, label = self.preprocess_test_data(data, label)
-                logits = self.model(data)
-                loss = self.criterion(logits, label)
-                test_loss += loss.item()
-                preds = logits.max(dim=1)[1]
+                # Unpack into (feats, coords) and label_tensor
+                (feats, coords), label_tensor = self.preprocess_test_data(data, label)
 
-                count += 1.0
-                test_true.append(label.cpu().numpy())
+                logits = self.model(feats, coords)      # pass both feats and coords
+                loss = self.criterion(logits, label_tensor)
+                test_loss += loss.item()
+
+                preds = logits.max(dim=1)[1]
+                test_true.append(label_tensor.cpu().numpy())
                 test_pred.append(preds.detach().cpu().numpy())
+                count += 1.0
 
                 running_avg_loss = test_loss / count
                 test_bar.set_postfix(test_loss=running_avg_loss)
