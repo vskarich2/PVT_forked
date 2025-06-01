@@ -1,5 +1,3 @@
-# trainer.py
-
 from __future__ import print_function
 from tqdm.notebook import tqdm, trange
 import warnings
@@ -121,22 +119,23 @@ class Trainer():
                 args=self.args
             )
         elif self.args.dataset == 'scanobjectnn':
+            # Use ScanObjectNNDataset for both full and dev subsets
             if getattr(self.args, 'dev_scan_subset', False):
-                # Use the small .npy “dev” subset
                 base = os.path.dirname(os.path.abspath(__file__))
                 subset_root = os.path.join(base, 'data', 'dev_scanObjectNN_subset')
                 print("USING DEV SCAN SUBSET at", subset_root)
-                ds = ScanObjectNNSubset(
-                    root_dir=subset_root,
-                    npoint=self.args.num_points,
-                    partition='train'
-                )
-            else:
-                # The normal, full-H5 loader
                 ds = ScanObjectNNDataset(
                     npoint=self.args.num_points,
                     partition='train',
-                    args=self.args
+                    args=self.args,
+                    knn_normals=self.args.knn_normals if hasattr(self.args, 'knn_normals') else 30
+                )
+            else:
+                ds = ScanObjectNNDataset(
+                    npoint=self.args.num_points,
+                    partition='train',
+                    args=self.args,
+                    knn_normals=self.args.knn_normals if hasattr(self.args, 'knn_normals') else 30
                 )
         else:
             raise ValueError(f"Unsupported dataset: {self.args.dataset}")
@@ -161,16 +160,18 @@ class Trainer():
                 base = os.path.dirname(os.path.abspath(__file__))
                 subset_root = os.path.join(base, 'data', 'dev_scanObjectNN_subset')
                 print("USING DEV SCAN SUBSET at", subset_root)
-                ds = ScanObjectNNSubset(
-                    root_dir=subset_root,
+                ds = ScanObjectNNDataset(
                     npoint=self.args.num_points,
-                    partition='test'
+                    partition='test',
+                    args=self.args,
+                    knn_normals=self.args.knn_normals if hasattr(self.args, 'knn_normals') else 30
                 )
             else:
                 ds = ScanObjectNNDataset(
                     npoint=self.args.num_points,
                     partition='test',
-                    args=self.args
+                    args=self.args,
+                    knn_normals=self.args.knn_normals if hasattr(self.args, 'knn_normals') else 30
                 )
         else:
             raise ValueError(f"Unsupported dataset: {self.args.dataset}")
@@ -187,11 +188,8 @@ class Trainer():
         """
         For ModelNet40: `data` comes in as (B, N, 6) → we split into
             feats  = (B, 6, N)   and  coords = (B, 3, N).
-        For ScanObjectNN: `data` comes in as (B, N, 3) → we set
-            feats  = coords = (B, 3, N).
-
-        Returns:
-            (feats, coords), label_tensor
+        For ScanObjectNN: `data` comes in as (B, N, 6) → we split into
+            feats  = (B, 6, N)   and  coords = (B, 3, N).
         """
         # 1) NumPy-side augmentations
         data_np = data.numpy()                               # (B, N, C)
@@ -209,9 +207,11 @@ class Trainer():
             # coords = first-three dims, transposed to (B, 3, N)
             coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
         elif self.args.dataset == 'scanobjectnn':
-            # everything is XYZ, so (B, N, 3) → (B, 3, N)
-            coords = data_t.permute(0, 2, 1).to(self.device)  # (B, 3, N)
-            feats = coords.clone()                            # (B, 3, N)
+            # ScanObjectNNDataset already returns (npoint, 6), so data_t is (B, N, 6)
+            # feats = all 6 channels, transposed to (B, 6, N)
+            feats = data_t.permute(0, 2, 1).to(self.device)  # (B, 6, N)
+            # coords = first-three dims, transposed to (B, 3, N)
+            coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
         else:
             raise ValueError(f"Unsupported dataset: {self.args.dataset}")
 
@@ -231,8 +231,8 @@ class Trainer():
             feats = data_t.permute(0, 2, 1).to(self.device)           # (B, 6, N)
             coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
         elif self.args.dataset == 'scanobjectnn':
-            coords = data_t.permute(0, 2, 1).to(self.device)  # (B, 3, N)
-            feats = coords.clone()                           # (B, 3, N)
+            feats = data_t.permute(0, 2, 1).to(self.device)  # (B, 6, N)
+            coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
         else:
             raise ValueError(f"Unsupported dataset: {self.args.dataset}")
 
