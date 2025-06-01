@@ -314,18 +314,34 @@ class Trainer():
         )
         return test_loader
 
+
     def get_train_loader(self):
-        train_loader = DataLoader(ModelNetDataLoader(
-            partition='train',
-            npoint=self.args.num_points,
-            args=self.args
-        ),
-            num_workers=self.args.num_workers,
+        if self.args.dataset == 'modelnet40':
+            ds = ModelNetDataLoader(
+                npoint=self.args.num_points,
+                partition='train',
+                uniform=False,
+                normal_channel=True,
+                cache_size=15000,
+                args=self.args
+            )
+        elif self.args.dataset == 'scanobjectnn':
+            ds = ScanObjectNNDataset(
+                npoint=self.args.num_points,
+                partition='train',
+                args=self.args
+            )
+        else:
+            raise ValueError(f"Unsupported dataset: {self.args.dataset}")
+
+        return torch.utils.data.DataLoader(
+            ds,
             batch_size=self.args.batch_size,
             shuffle=True,
+            num_workers=self.args.num_workers,
             drop_last=True
         )
-        return train_loader
+
 
     def load_model(self, device):
         # Try to load models
