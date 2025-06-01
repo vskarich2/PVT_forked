@@ -370,8 +370,8 @@ class Trainer():
                 weight_decay=self.args.weight_decay
             )
         else:
-            print("Using Adam")
-            opt = optim.Adam(
+            print("Using AdamW")
+            opt = optim.AdamW(
                 model.parameters(),
                 lr=self.args.lr,
                 weight_decay=self.args.weight_decay
