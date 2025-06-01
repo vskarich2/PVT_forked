@@ -475,5 +475,85 @@ class ScanObjectNNDataset(Dataset):
 
         return normals
 
+# ──────────────────────────────────────────────────────────────────────────────
+# NEW: loader for a “.npy”‐based ScanObjectNN subset
+# Place this at the end of data.py, after ScanObjectNNDataset.
+
+import glob
+
+class ScanObjectNNSubset(torch.utils.data.Dataset):
+    """
+    Loads ScanObjectNN‐style samples from a directory of .npy files.
+    Expects, e.g.:
+
+        data/dev_scanObjectNN_subset/train/
+            train_000_data.npy    # shape (N_points, 3)
+            train_000_label.npy   # scalar or shape (1,)
+            train_001_data.npy
+            train_001_label.npy
+            ...
+
+        data/dev_scanObjectNN_subset/test/
+            test_000_data.npy
+            test_000_label.npy
+            ...
+    Returns (coords, label) pairs exactly like ScanObjectNNDataset.
+    """
+    def __init__(self, root_dir, npoint=1024, partition='train'):
+        super().__init__()
+        self.npoint = npoint
+        self.partition = partition
+        # e.g. root_dir = "/content/PVT_forked/data/dev_scanObjectNN_subset"
+        self.folder = os.path.join(root_dir, partition)  # “.../train” or “.../test”
+        # Find all *_data.npy in that folder:
+        pattern = os.path.join(self.folder, f"{partition}_*_data.npy")
+        self.data_paths = sorted(glob.glob(pattern))
+        if len(self.data_paths) == 0:
+            raise FileNotFoundError(f"No files matching {pattern}")
+        # We assume that for each “.../train_XXX_data.npy” there is a “train_XXX_label.npy”
+        # with the same XXX index.
+        # Build pairs:
+        self.pairs = []
+        for data_path in self.data_paths:
+            # data_path ends with something like “.../train_000_data.npy”
+            base = os.path.basename(data_path)  # “train_000_data.npy”
+            idx = base.replace(f"{partition}_", "").replace("_data.npy", "")  # “000”
+            label_path = os.path.join(self.folder, f"{partition}_{idx}_label.npy")
+            if not os.path.isfile(label_path):
+                raise FileNotFoundError(f"Could not find {label_path} for {data_path}")
+            self.pairs.append((data_path, label_path))
+
+    def __len__(self):
+        return len(self.pairs)
+
+    def __getitem__(self, idx):
+        data_path, label_path = self.pairs[idx]
+        pts = np.load(data_path)    # shape = (N_pts_original, 3)
+        lbl = np.load(label_path)   # either a scalar array or shape (1,)
+        if pts.ndim != 2 or pts.shape[1] < 3:
+            raise RuntimeError(f"Expected shape (n,3), got {pts.shape} in {data_path}")
+
+        # Subsample (or up‐sample) to exactly npoint:
+        N_orig = pts.shape[0]
+        if N_orig >= self.npoint:
+            choice = np.random.choice(N_orig, self.npoint, replace=False)
+        else:
+            choice = np.random.choice(N_orig, self.npoint, replace=True)
+        sampled = pts[choice, :]    # (npoint, 3)
+
+        # Normalize to unit sphere (same as pc_normalize from before)
+        sampled[:, 0:3] = pc_normalize(sampled[:, 0:3])
+
+        # Transpose to (3, npoint) to match the existing ScanObjectNNDataset API:
+        sampled = sampled.T         # shape = (3, npoint)
+
+        # Label: either scalar or array of shape (1,)
+        if np.isscalar(lbl):
+            lbl_scalar = int(lbl)
+        else:
+            lbl_scalar = int(lbl.squeeze())
+        return sampled.astype('float32'), lbl_scalar
+
+
 
 
