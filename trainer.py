@@ -160,22 +160,36 @@ class Trainer():
             drop_last=False
         )
 
+
+    
     def preprocess_data(self, data, label):
         data = data.numpy()
         data = provider.random_point_dropout(data)
         data[:, :, 0:3] = provider.random_scale_point_cloud(data[:, :, 0:3])
         data[:, :, 0:3] = provider.shift_point_cloud(data[:, :, 0:3])
         data = torch.Tensor(data)
-        label = torch.LongTensor(label[:, 0].numpy())
-        data, label = data.to(self.device), label.to(self.device).squeeze()
+
+        # Handle both [batch, 1] and [batch] label shapes:
+        if label.dim() == 2 and label.size(1) == 1:
+            label = label[:, 0]
+        label = label.long()  # ensure it’s a 1D LongTensor
+
+        data = data.to(self.device)
+        label = label.to(self.device)
         data = data.permute(0, 2, 1)
         return data, label
 
     def preprocess_test_data(self, data, label):
-        label = torch.LongTensor(label[:, 0].numpy())
-        data, label = data.to(self.device), label.to(self.device).squeeze()
+        # Handle both [batch, 1] and [batch] label shapes:
+        if label.dim() == 2 and label.size(1) == 1:
+            label = label[:, 0]
+        label = label.long()  # ensure it’s a 1D LongTensor
+
+        data = data.to(self.device)
+        label = label.to(self.device)
         data = data.permute(0, 2, 1)
         return data, label
+        
 
     def train_one_epoch(self, epoch, train_loader):
         self.model.train()
