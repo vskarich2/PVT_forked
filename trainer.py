@@ -257,7 +257,7 @@ class Trainer():
             self.opt.zero_grad()
 
             # pass both feats and coords into the model
-            logits = self.model(feats, coords)
+            logits = self.model(feats)
             loss = self.criterion(logits, label_tensor)
             loss.backward()
             self.opt.step()
@@ -294,7 +294,7 @@ class Trainer():
                 (feats, coords), label_tensor = self.preprocess_test_data(data, label)
 
                 # pass both feats and coords into the model
-                logits = self.model(feats, coords)
+                logits = self.model(feats)
                 loss = self.criterion(logits, label_tensor)
                 test_loss += loss.item()
 
@@ -427,7 +427,7 @@ class Trainer():
                     (feats, coords), label_tensor = self.preprocess_test_data(data, label)
 
                     # forward pass
-                    logits = self.model(feats, coords)
+                    logits = self.model(feats)
                     preds = logits.max(dim=1)[1]
 
                     test_true.append(label_tensor.cpu().numpy())
