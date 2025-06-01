@@ -1,4 +1,5 @@
 # trainer.py
+
 from __future__ import print_function
 from tqdm.notebook import tqdm, trange
 import warnings
@@ -9,7 +10,7 @@ import argparse
 import torch
 import torch.optim as optim
 
-# ─── Imports for schedulers ───────────────────────────────────────────────────
+# ─── Additional imports for schedulers ────────────────────────────────────────
 import math
 from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR
 # ──────────────────────────────────────────────────────────────────────────────
@@ -36,13 +37,13 @@ class Trainer():
         self.opt = self.set_optimizer(self.model)
 
         # 2) Set up scheduler:
-        #    - If using SGD → pure CosineAnnealingLR over all epochs
+        #    - If using SGD → pure CosineAnnealingLR over all epochs (eta_min=0)
         #    - If using AdamW → 10‐epoch linear warmup, then cosine decay
         if self.args.use_sgd:
-            # CosineAnnealingLR for SGD: T_max = total epochs, eta_min = 0
+            # pure cosine decay for SGD: T_max = total epochs, eta_min = 0
             self.scheduler = CosineAnnealingLR(self.opt, T_max=self.args.epochs, eta_min=0.0)
         else:
-            # LambdaLR for AdamW: warmup (0→1) for first 10 epochs, then cosine decay to 0
+            # LambdaLR for AdamW: 10‐epoch linear warmup (0→1), then cosine decay to 0
             total_epochs = self.args.epochs
             warmup_epochs = 10
 
@@ -160,9 +161,8 @@ class Trainer():
             drop_last=False
         )
 
-
-    
     def preprocess_data(self, data, label):
+        # data: [B, points, features]
         data = data.numpy()
         data = provider.random_point_dropout(data)
         data[:, :, 0:3] = provider.random_scale_point_cloud(data[:, :, 0:3])
@@ -171,8 +171,8 @@ class Trainer():
 
         # Handle both [batch, 1] and [batch] label shapes:
         if label.dim() == 2 and label.size(1) == 1:
-            label = label[:, 0]
-        label = label.long()  # ensure it’s a 1D LongTensor
+            label = label[:, 0]   # convert (B,1) → (B,)
+        label = label.long()      # ensure it’s a 1D LongTensor
 
         data = data.to(self.device)
         label = label.to(self.device)
@@ -183,13 +183,12 @@ class Trainer():
         # Handle both [batch, 1] and [batch] label shapes:
         if label.dim() == 2 and label.size(1) == 1:
             label = label[:, 0]
-        label = label.long()  # ensure it’s a 1D LongTensor
+        label = label.long()
 
         data = data.to(self.device)
         label = label.to(self.device)
         data = data.permute(0, 2, 1)
         return data, label
-        
 
     def train_one_epoch(self, epoch, train_loader):
         self.model.train()
@@ -215,7 +214,6 @@ class Trainer():
             running_count += 1.0
             running_avg = running_loss / running_count
 
-            # Get current LR, whether scheduler is Cosine or Lambda
             current_lr = self.scheduler.get_last_lr()[0]
             train_bar.set_postfix({
                 "Avg Loss": f"🔥{running_avg:.4f}🔥",
@@ -324,7 +322,6 @@ class Trainer():
                 best_test_acc = float(test_acc)
                 self.save_new_checkpoint(epoch, test_acc)
 
-            # Log LR for this epoch
             current_lr = self.scheduler.get_last_lr()[0]
             wandb.log({
                 "train/TrainAvgLoss": train_avg_loss,
@@ -372,8 +369,12 @@ class Trainer():
             logging_wrapper.set_description(f"TESTING {len(test_loader)} Batches...")
             with torch.no_grad():
                 for data, label in logging_wrapper:
-                    label = torch.LongTensor(label[:, 0].numpy())
-                    data, label = data.to(self.device), label.to(self.device).squeeze()
+                    # Handle both [batch,1] and [batch] here as well
+                    if label.dim() == 2 and label.size(1) == 1:
+                        label = label[:, 0]
+                    label = label.long()
+
+                    data, label = data.to(self.device), label.to(self.device)
                     data = data.permute(0, 2, 1)
                     logits = self.model(data)
 
