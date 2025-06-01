@@ -162,33 +162,55 @@ class Trainer():
         )
 
     def preprocess_data(self, data, label):
-        # data: [B, points, features]
-        data = data.numpy()
-        data = provider.random_point_dropout(data)
-        data[:, :, 0:3] = provider.random_scale_point_cloud(data[:, :, 0:3])
-        data[:, :, 0:3] = provider.shift_point_cloud(data[:, :, 0:3])
-        data = torch.Tensor(data)
-
-        # Handle both [batch, 1] and [batch] label shapes:
-        if label.dim() == 2 and label.size(1) == 1:
-            label = label[:, 0]   # convert (B,1) → (B,)
-        label = label.long()      # ensure it’s a 1D LongTensor
-
-        data = data.to(self.device)
-        label = label.to(self.device)
-        data = data.permute(0, 2, 1)
-        return data, label
+        """
+        For ModelNet40: `data` has shape (B, N, 6) → features = (B, 6, N), coords = (B, 3, N).
+        For ScanObjectNN: `data` has shape (B, N, 3) → both features and coords = (B, 3, N).
+        """
+        # 1) Move to NumPy, apply point‐cloud augmentations (dropout/scale/shift)
+        data_np = data.numpy()  # shape = (B, N, C), C=6 for ModelNet40, C=3 for ScanObjectNN
+        data_np = provider.random_point_dropout(data_np)
+        data_np[:, :, 0:3] = provider.random_scale_point_cloud(data_np[:, :, 0:3])
+        data_np[:, :, 0:3] = provider.shift_point_cloud(data_np[:, :, 0:3])
+    
+        # 2) Convert back to Tensor, then split into (features, coords) depending on dataset
+        data_t = torch.from_numpy(data_np.astype('float32'))  # shape = (B, N, C)
+    
+        if self.args.dataset == 'modelnet40':
+            # ModelNet40: first 6 dims are (XYZ + normals)
+            feats  = data_t.permute(0, 2, 1).to(self.device)       # (B, 6, N)
+            coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
+        elif self.args.dataset == 'scanobjectnn':
+            # ScanObjectNN: only XYZ (C=3), so features = coords = that same (B, 3, N)
+            coords = data_t.permute(0, 2, 1).to(self.device)       # (B, 3, N)
+            feats  = coords.clone()                                # (B, 3, N)
+        else:
+            raise ValueError(f"Unsupported dataset: {self.args.dataset}")
+    
+        # 3) Convert label to LongTensor of shape (B,)
+        label_tensor = torch.LongTensor(label).to(self.device)
+    
+        return (feats, coords), label_tensor
+    
 
     def preprocess_test_data(self, data, label):
-        # Handle both [batch, 1] and [batch] label shapes:
-        if label.dim() == 2 and label.size(1) == 1:
-            label = label[:, 0]
-        label = label.long()
-
-        data = data.to(self.device)
-        label = label.to(self.device)
-        data = data.permute(0, 2, 1)
-        return data, label
+        """
+        Same splitting logic as preprocess_data, but with no augmentations.
+        """
+        data_np = data.numpy()                           # (B, N, C)
+        data_t  = torch.from_numpy(data_np.astype('float32'))
+    
+        if self.args.dataset == 'modelnet40':
+            feats  = data_t.permute(0, 2, 1).to(self.device)       # (B, 6, N)
+            coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
+        elif self.args.dataset == 'scanobjectnn':
+            coords = data_t.permute(0, 2, 1).to(self.device)       # (B, 3, N)
+            feats  = coords.clone()                                # (B, 3, N)
+        else:
+            raise ValueError(f"Unsupported dataset: {self.args.dataset}")
+    
+        label_tensor = torch.LongTensor(label).to(self.device)  # (B,)
+    
+        return (feats, coords), label_tensor
 
     def train_one_epoch(self, epoch, train_loader):
         self.model.train()
