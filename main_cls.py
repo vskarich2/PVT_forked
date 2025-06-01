@@ -62,8 +62,10 @@ if __name__ == "__main__":
     parser.add_argument('--model', type=str, default='pvt', metavar='N',
                         choices=['pvt'],
                         help='Model to use, [pvt]')
+    #parser.add_argument('--dataset', type=str, default='modelnet40', metavar='N',choices=['modelnet40'])
     parser.add_argument('--dataset', type=str, default='modelnet40', metavar='N',
-                        choices=['modelnet40'])
+                        choices=['modelnet40', 'scanobjectnn'],
+                        help='Which dataset to train/test on') #Accomodate new dataset scanobjectnn
     parser.add_argument('--batch_size', type=int, default=32, metavar='batch_size',
                         help='Size of training batch)')
     parser.add_argument('--test_batch_size', type=int, default=32, metavar='batch_size',
