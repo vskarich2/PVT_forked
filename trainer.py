@@ -121,11 +121,23 @@ class Trainer():
                 args=self.args
             )
         elif self.args.dataset == 'scanobjectnn':
-            ds = ScanObjectNNDataset(
-                npoint=self.args.num_points,
-                partition='train',
-                args=self.args
-            )
+            if getattr(self.args, 'dev_scan_subset', False):
+                # Use the small .npy “dev” subset
+                base = os.path.dirname(os.path.abspath(__file__))
+                subset_root = os.path.join(base, 'data', 'dev_scanObjectNN_subset')
+                print("USING DEV SCAN SUBSET at", subset_root)
+                ds = ScanObjectNNSubset(
+                    root_dir=subset_root,
+                    npoint=self.args.num_points,
+                    partition='train'
+                )
+            else:
+                # The normal, full‐H5 loader
+                ds = ScanObjectNNDataset(
+                    npoint=self.args.num_points,
+                    partition='train',
+                    args=self.args
+                )
         else:
             raise ValueError(f"Unsupported dataset: {self.args.dataset}")
 
@@ -136,6 +148,7 @@ class Trainer():
             num_workers=self.args.num_workers,
             drop_last=True
         )
+        
 
     def get_test_loader(self):
         if self.args.dataset == 'modelnet40':
@@ -145,19 +158,29 @@ class Trainer():
                 args=self.args
             )
         elif self.args.dataset == 'scanobjectnn':
-            ds = ScanObjectNNDataset(
-                npoint=self.args.num_points,
-                partition='test',
-                args=self.args
-            )
+            if getattr(self.args, 'dev_scan_subset', False):
+                base = os.path.dirname(os.path.abspath(__file__))
+                subset_root = os.path.join(base, 'data', 'dev_scanObjectNN_subset')
+                print("USING DEV SCAN SUBSET at", subset_root)
+                ds = ScanObjectNNSubset(
+                    root_dir=subset_root,
+                    npoint=self.args.num_points,
+                    partition='test'
+                )
+            else:
+                ds = ScanObjectNNDataset(
+                    npoint=self.args.num_points,
+                    partition='test',
+                    args=self.args
+                )
         else:
             raise ValueError(f"Unsupported dataset: {self.args.dataset}")
 
         return DataLoader(
             ds,
-            num_workers=self.args.num_workers,
             batch_size=self.args.test_batch_size,
             shuffle=False,
+            num_workers=self.args.num_workers,
             drop_last=False
         )
 
