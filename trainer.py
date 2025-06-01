@@ -161,56 +161,63 @@ class Trainer():
             drop_last=False
         )
 
-    def preprocess_data(self, data, label):
+        def preprocess_data(self, data, label):
         """
-        For ModelNet40: `data` has shape (B, N, 6) → outputs:
-            feats  = (B, 6, N), coords = (B, 3, N).
-        For ScanObjectNN: `data` has shape (B, N, 3) → outputs:
+        For ModelNet40: `data` comes in as (B, N, 6) → we split into
+            feats  = (B, 6, N)   and  coords = (B, 3, N).
+        For ScanObjectNN: `data` comes in as (B, N, 3) → we set
             feats  = coords = (B, 3, N).
+
+        Returns:
+            (feats, coords), label_tensor
         """
-        # 1) Apply augmentations in NumPy
-        data_np = data.numpy()                            # (B, N, C)
+        # 1) NumPy‐side augmentations
+        data_np = data.numpy()                               # (B, N, C)
         data_np = provider.random_point_dropout(data_np)
         data_np[:, :, 0:3] = provider.random_scale_point_cloud(data_np[:, :, 0:3])
         data_np[:, :, 0:3] = provider.shift_point_cloud(data_np[:, :, 0:3])
 
-        # 2) Convert back to a Tensor
+        # 2) back to FloatTensor
         data_t = torch.from_numpy(data_np.astype('float32'))  # (B, N, C)
 
-        # 3) Split into (feats, coords) per dataset
+        # 3) split into feats / coords depending on dataset
         if self.args.dataset == 'modelnet40':
-            feats  = data_t.permute(0, 2, 1).to(self.device)         # (B, 6, N)
+            # feats = all 6 channels, transposed to (B, 6, N)
+            feats  = data_t.permute(0, 2, 1).to(self.device)           # (B, 6, N)
+            # coords = first‐three dims, transposed to (B, 3, N)
             coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
         elif self.args.dataset == 'scanobjectnn':
-            coords = data_t.permute(0, 2, 1).to(self.device)         # (B, 3, N)
-            feats  = coords.clone()                                  # (B, 3, N)
+            # everything is XYZ, so (B, N, 3) → (B, 3, N)
+            coords = data_t.permute(0, 2, 1).to(self.device)  # (B, 3, N)
+            feats  = coords.clone()                           # (B, 3, N)
         else:
             raise ValueError(f"Unsupported dataset: {self.args.dataset}")
 
-        # 4) Convert label to a 1D LongTensor
-        label_tensor = torch.LongTensor(label).to(self.device)     # (B,)
+        # 4) turn `label` into a 1D LongTensor of shape (B,)
+        label_tensor = torch.LongTensor(label).to(self.device)
 
         return (feats, coords), label_tensor
+
 
     def preprocess_test_data(self, data, label):
         """
-        Same splitting logic but no augmentations.
+        Exactly the same splitting logic as preprocess_data, but no random augmentations.
         """
-        data_np = data.numpy()                                       # (B, N, C)
-        data_t  = torch.from_numpy(data_np.astype('float32'))       # (B, N, C)
+        data_np = data.numpy()                                # (B, N, C)
+        data_t  = torch.from_numpy(data_np.astype('float32')) # (B, N, C)
 
         if self.args.dataset == 'modelnet40':
-            feats  = data_t.permute(0, 2, 1).to(self.device)         # (B, 6, N)
+            feats  = data_t.permute(0, 2, 1).to(self.device)           # (B, 6, N)
             coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
         elif self.args.dataset == 'scanobjectnn':
-            coords = data_t.permute(0, 2, 1).to(self.device)         # (B, 3, N)
-            feats  = coords.clone()                                  # (B, 3, N)
+            coords = data_t.permute(0, 2, 1).to(self.device)  # (B, 3, N)
+            feats  = coords.clone()                           # (B, 3, N)
         else:
             raise ValueError(f"Unsupported dataset: {self.args.dataset}")
 
-        label_tensor = torch.LongTensor(label).to(self.device)       # (B,)
-
+        label_tensor = torch.LongTensor(label).to(self.device)  # (B,)
         return (feats, coords), label_tensor
+
 
     def train_one_epoch(self, epoch, train_loader):
         self.scheduler.step()
@@ -226,11 +233,11 @@ class Trainer():
         running_count = 0.0
 
         for data, label in train_bar:
-            # Unpack into (feats, coords) and label_tensor
             (feats, coords), label_tensor = self.preprocess_data(data, label)
-
             self.opt.zero_grad()
-            logits = self.model(feats, coords)         # pass both feats and coords
+
+            # pass both feats and coords into the model
+            logits = self.model(feats, coords)
             loss = self.criterion(logits, label_tensor)
             loss.backward()
             self.opt.step()
@@ -249,6 +256,7 @@ class Trainer():
         train_bar.close()
         return running_loss / running_count
 
+
     def test_one_epoch(self, epoch, test_loader, train_avg_loss, best_test_acc):
         test_loss = 0.0
         count = 0.0
@@ -264,10 +272,10 @@ class Trainer():
         )
         with torch.no_grad():
             for data, label in test_bar:
-                # Unpack into (feats, coords) and label_tensor
                 (feats, coords), label_tensor = self.preprocess_test_data(data, label)
 
-                logits = self.model(feats, coords)      # pass both feats and coords
+                # pass both feats and coords into the model
+                logits = self.model(feats, coords)
                 loss = self.criterion(logits, label_tensor)
                 test_loss += loss.item()
 
@@ -290,6 +298,7 @@ class Trainer():
             best_test_acc
         )
         return test_acc
+
 
     def check_stats(self, count, epoch, test_loss, test_pred, test_true, avg_train_loss, best_test_acc):
         test_true = np.concatenate(test_true)
