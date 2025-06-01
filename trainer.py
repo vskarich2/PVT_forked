@@ -14,7 +14,7 @@ import math
 from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR
 # ──────────────────────────────────────────────────────────────────────────────
 
-from data import ModelNetDataLoader, ScanObjectNNDataset, ScanObjectNNSubset
+from data import ModelNetDataLoader, ScanObjectNNDataset
 from model.pvt import pvt
 import numpy as np
 from torch.utils.data import DataLoader
