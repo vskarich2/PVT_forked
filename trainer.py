@@ -145,7 +145,7 @@ class Trainer():
             batch_size=self.args.batch_size,
             shuffle=True,
             num_workers=self.args.num_workers,
-            drop_last=True
+            drop_last=False #reverse to True when testing on FULL DATA
         )
 
     def get_test_loader(self):
