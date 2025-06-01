@@ -6,7 +6,6 @@ import torch
 from torch.utils.data import Dataset
 import json
 import open3d as o3d
-from data import pc_normalize, farthest_point_sample  # if needed elsewhere
 
 def pc_normalize(pc):
     """Normalize point cloud to unit sphere
