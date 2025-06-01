@@ -5,6 +5,8 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import json
+import open3d as o3d
+from data import pc_normalize, farthest_point_sample  # if needed elsewhere
 
 def pc_normalize(pc):
     """Normalize point cloud to unit sphere
@@ -375,55 +377,103 @@ class S3DIS(Dataset):
 
 class ScanObjectNNDataset(Dataset):
     """
-    Loads ScanObjectNN from the H5 files saved under data/ScanObjectNN/,
-    returning (points, label) pairs exactly like ModelNetDataLoader does.
+    Loads ScanObjectNN from H5 files under data/ScanObjectNN/ and returns
+    a (num_points × 6) array per sample, where each row is (X,Y,Z,Nx,Ny,Nz).
+    Scales/normalizes XYZ exactly like ModelNet40, so downstream code need not change.
     """
-    def __init__(self, npoint=1024, partition='train', args=None):
+    def __init__(self, npoint=1024, partition='train', args=None, knn_normals=30):
         """
         npoint:       how many points to sample
         partition:    'train' or 'test'
-        args:         passed so you can read args.num_points if you wish
+        args:         passed so you can read args.num_points if desired
+        knn_normals:  how many neighbors to use when computing normals via PCA
         """
         self.npoint = npoint
         self.partition = partition
+        self.args = args
+        self.knn_normals = knn_normals
+
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
         DATA_DIR = os.path.join(BASE_DIR, 'data', 'ScanObjectNN')
-        
-        # Choose the correct H5 file for train vs. test
+
+        # Choose the correct H5 file name
         if partition == 'train':
             h5_name = 'training_objectdataset_augmentedrot_scale75.h5'
         else:
             h5_name = 'test_objectdataset_augmentedrot_scale75.h5'
-        h5_path = os.path.join(DATA_DIR, h5_name)
 
-        # Load the entire H5 contents into memory (reasonable size)
+        h5_path = os.path.join(DATA_DIR, h5_name)
+        if not os.path.exists(h5_path):
+            raise FileNotFoundError(f"Cannot find {h5_path}. Make sure you unzipped into data/ScanObjectNN/")
+
+        # Load entire H5 into memory
         with h5py.File(h5_path, 'r') as f:
-            # 'data' is [N_samples × N_points × 3], 'label' is [N_samples,]
-            self.data = f['data'][:].astype('float32')   # (N, N_pts, 3)
-            self.label = f['label'][:].astype('int64')  # (N,)
+            # 'data' is (N_samples × M_pts × 3), 'label' is (N_samples,)
+            self.raw_data = f['data'][:]     # NumPy array, dtype=float32
+            self.raw_label = f['label'][:]   # NumPy array, dtype=int64
+
+        # Optionally precompute normals for all samples now (expensive, but once)
+        # We store a list of (N_pts,3) normal arrays.
+        self.normals_list = [None] * self.raw_data.shape[0]
+        for idx in range(self.raw_data.shape[0]):
+            pts = self.raw_data[idx]                          # (M_pts, 3)
+            self.normals_list[idx] = self._compute_normals(pts)  # (M_pts, 3)
 
     def __len__(self):
-        return self.data.shape[0]
+        return self.raw_data.shape[0]
 
     def __getitem__(self, idx):
-        # Grab (N_pts_original, 3) and scalar label
-        pts = self.data[idx]
-        lbl = int(self.label[idx])
+        """
+        Returns:
+          sampled_feats: NumPy float32 array of shape (npoint, 6)
+          label:         Python int (0..num_classes-1)
+        """
+        pts = self.raw_data[idx]            # shape = (M, 3)
+        nrm = self.normals_list[idx]        # shape = (M, 3)
+        label = int(self.raw_label[idx])    # scalar
 
-        # Subsample or duplicate so that we output exactly self.npoint points
-        if pts.shape[0] >= self.npoint:
-            choice = np.random.choice(pts.shape[0], self.npoint, replace=False)
+        M = pts.shape[0]
+        # 1) Randomly sample exactly self.npoint points (duplicate if M < npoint)
+        if M >= self.npoint:
+            choice = np.random.choice(M, self.npoint, replace=False)
         else:
-            choice = np.random.choice(pts.shape[0], self.npoint, replace=True)
-        sampled = pts[choice, :]       # (npoint, 3)
+            choice = np.random.choice(M, self.npoint, replace=True)
+        sampled_pts    = pts[choice, :]    # (npoint, 3)
+        sampled_norms  = nrm[choice, :]    # (npoint, 3)
 
-        # Normalize coordinates to unit sphere (same as ModelNet)
-        sampled[:, 0:3] = pc_normalize(sampled[:, 0:3])
+        # 2) Normalize XYZ channels to unit sphere (same as ModelNet’s pc_normalize)
+        sampled_pts[:, 0:3] = pc_normalize(sampled_pts[:, 0:3])
 
-        # Transpose to (3, npoint) to match ModelNetDataLoader output format
-        sampled = sampled.T            # shape = (3, npoint)
+        # 3) Concatenate into (npoint × 6): (X,Y,Z,Nx,Ny,Nz)
+        sampled_feats = np.concatenate([sampled_pts, sampled_norms], axis=1).astype('float32')
 
-        return sampled, lbl
+        return sampled_feats, label
+
+    def _compute_normals(self, pts_np):
+        """
+        Estimate per-point normals via PCA over knn_normals neighbors.
+
+        Input:
+          pts_np: NumPy array of shape (M, 3)
+        Returns:
+          normals: NumPy array of shape (M, 3), unit‐length
+        """
+        # Build Open3D point cloud
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pts_np)
+
+        # Estimate normals with k‐NN
+        pcd.estimate_normals(
+            search_param=o3d.geometry.KDTreeSearchParamKNN(knn=self.knn_normals),
+            fast_normal_computation=False
+        )
+        normals = np.asarray(pcd.normals, dtype='float32')
+
+        # (Optional) You can consistently orient normals, if desired:
+        # pcd.orient_normals_consistent_tangent_plane(knn=self.knn_normals)
+        # normals = np.asarray(pcd.normals, dtype='float32')
+
+        return normals
 
 
 
