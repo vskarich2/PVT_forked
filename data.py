@@ -368,4 +368,62 @@ class S3DIS(Dataset):
             return data, label
         else:
             return data[:-3, :], label
+    
+    
+# ──────────────────────────────────────────────────────────────────────────────
+# ─── NEW: ScanObjectNNDataset definition ─────────────────────────────────────
+
+class ScanObjectNNDataset(Dataset):
+    """
+    Loads ScanObjectNN from the H5 files saved under data/ScanObjectNN/,
+    returning (points, label) pairs exactly like ModelNetDataLoader does.
+    """
+    def __init__(self, npoint=1024, partition='train', args=None):
+        """
+        npoint:       how many points to sample
+        partition:    'train' or 'test'
+        args:         passed so you can read args.num_points if you wish
+        """
+        self.npoint = npoint
+        self.partition = partition
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        DATA_DIR = os.path.join(BASE_DIR, 'data', 'ScanObjectNN')
+        
+        # Choose the correct H5 file for train vs. test
+        if partition == 'train':
+            h5_name = 'training_objectdataset_augmentedrot_scale75.h5'
+        else:
+            h5_name = 'test_objectdataset_augmentedrot_scale75.h5'
+        h5_path = os.path.join(DATA_DIR, h5_name)
+
+        # Load the entire H5 contents into memory (reasonable size)
+        with h5py.File(h5_path, 'r') as f:
+            # 'data' is [N_samples × N_points × 3], 'label' is [N_samples,]
+            self.data = f['data'][:].astype('float32')   # (N, N_pts, 3)
+            self.label = f['label'][:].astype('int64')  # (N,)
+
+    def __len__(self):
+        return self.data.shape[0]
+
+    def __getitem__(self, idx):
+        # Grab (N_pts_original, 3) and scalar label
+        pts = self.data[idx]
+        lbl = int(self.label[idx])
+
+        # Subsample or duplicate so that we output exactly self.npoint points
+        if pts.shape[0] >= self.npoint:
+            choice = np.random.choice(pts.shape[0], self.npoint, replace=False)
+        else:
+            choice = np.random.choice(pts.shape[0], self.npoint, replace=True)
+        sampled = pts[choice, :]       # (npoint, 3)
+
+        # Normalize coordinates to unit sphere (same as ModelNet)
+        sampled[:, 0:3] = pc_normalize(sampled[:, 0:3])
+
+        # Transpose to (3, npoint) to match ModelNetDataLoader output format
+        sampled = sampled.T            # shape = (3, npoint)
+
+        return sampled, lbl
+
+
 
