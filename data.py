@@ -376,47 +376,59 @@ class S3DIS(Dataset):
 
 class ScanObjectNNDataset(Dataset):
     """
-    Loads ScanObjectNN from H5 files under data/ScanObjectNN/ and returns
-    a (num_points × 6) array per sample, where each row is (X,Y,Z,Nx,Ny,Nz).
-    Scales/normalizes XYZ exactly like ModelNet40, so downstream code need not change.
+    Loads ScanObjectNN from H5 files under either:
+      • data/ScanObjectNN/train/…
+      • data/ScanObjectNN/test/…
+    or, if --dev_scan_subset is passed:
+      • data/dev_scanObjectNN_subset/train/…
+      • data/dev_scanObjectNN_subset/test/…
+    Returns a (npoint × 6) array per sample, where each row is (X, Y, Z, Nx, Ny, Nz).
     """
     def __init__(self, npoint=1024, partition='train', args=None, knn_normals=30):
         """
-        npoint:       how many points to sample
-        partition:    'train' or 'test'
-        args:         passed so you can read args.num_points if desired
-        knn_normals:  how many neighbors to use when computing normals via PCA
+        Args:
+          npoint:       number of points to sample per cloud
+          partition:    'train' or 'test'
+          args:         parsed args (used to check args.dev_scan_subset)
+          knn_normals:  number of neighbors for PCA normal estimation
         """
+        super().__init__()
         self.npoint = npoint
         self.partition = partition
         self.args = args
         self.knn_normals = knn_normals
 
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        DATA_DIR = os.path.join(BASE_DIR, 'data', 'ScanObjectNN')
 
-        # Choose the correct H5 file name
+        # If --dev_scan_subset is True, switch to the small subset folder
+        if getattr(args, 'dev_scan_subset', False):
+            DATA_DIR = os.path.join(BASE_DIR, 'data', 'dev_scanObjectNN_subset')
+        else:
+            DATA_DIR = os.path.join(BASE_DIR, 'data', 'ScanObjectNN')
+
+        # Which H5 file to open inside the ‘train’ or ‘test’ subfolder
         if partition == 'train':
             h5_name = 'training_objectdataset_augmentedrot_scale75.h5'
         else:
             h5_name = 'test_objectdataset_augmentedrot_scale75.h5'
 
-        h5_path = os.path.join(DATA_DIR, h5_name)
+        # Construct full path; note the subdirectory named exactly ‘train’ or ‘test’
+        h5_path = os.path.join(DATA_DIR, partition, h5_name)
         if not os.path.exists(h5_path):
-            raise FileNotFoundError(f"Cannot find {h5_path}. Make sure you unzipped into data/ScanObjectNN/")
+            raise FileNotFoundError(f"Cannot find {h5_path}. "
+                                    f"Make sure the H5 file is in the correct folder.")
 
         # Load entire H5 into memory
         with h5py.File(h5_path, 'r') as f:
             # 'data' is (N_samples × M_pts × 3), 'label' is (N_samples,)
-            self.raw_data = f['data'][:]     # NumPy array, dtype=float32
-            self.raw_label = f['label'][:]   # NumPy array, dtype=int64
+            self.raw_data = f['data'][:]       # NumPy array, dtype=float32
+            self.raw_label = f['label'][:]     # NumPy array, dtype=int64
 
-        # Optionally precompute normals for all samples now (expensive, but once)
-        # We store a list of (N_pts,3) normal arrays.
+        # Precompute normals for each sample (expensive but done once)
         self.normals_list = [None] * self.raw_data.shape[0]
         for idx in range(self.raw_data.shape[0]):
-            pts = self.raw_data[idx]                          # (M_pts, 3)
-            self.normals_list[idx] = self._compute_normals(pts)  # (M_pts, 3)
+            pts = self.raw_data[idx]  # shape = (M_pts, 3)
+            self.normals_list[idx] = self._compute_normals(pts)  # returns (M_pts, 3)
 
     def __len__(self):
         return self.raw_data.shape[0]
@@ -425,134 +437,48 @@ class ScanObjectNNDataset(Dataset):
         """
         Returns:
           sampled_feats: NumPy float32 array of shape (npoint, 6)
+                          (X,Y,Z,Nx,Ny,Nz) for the sampled points
           label:         Python int (0..num_classes-1)
         """
-        pts = self.raw_data[idx]            # shape = (M, 3)
-        nrm = self.normals_list[idx]        # shape = (M, 3)
-        label = int(self.raw_label[idx])    # scalar
+        pts = self.raw_data[idx]           # (M, 3)
+        nrm = self.normals_list[idx]       # (M, 3)
+        label = int(self.raw_label[idx])   # scalar
 
         M = pts.shape[0]
-        # 1) Randomly sample exactly self.npoint points (duplicate if M < npoint)
+        # 1) Randomly sample exactly npoint points (duplicate if M < npoint)
         if M >= self.npoint:
             choice = np.random.choice(M, self.npoint, replace=False)
         else:
             choice = np.random.choice(M, self.npoint, replace=True)
-        sampled_pts    = pts[choice, :]    # (npoint, 3)
-        sampled_norms  = nrm[choice, :]    # (npoint, 3)
 
-        # 2) Normalize XYZ channels to unit sphere (same as ModelNet’s pc_normalize)
+        sampled_pts = pts[choice, :]    # (npoint, 3)
+        sampled_nrm = nrm[choice, :]    # (npoint, 3)
+
+        # 2) Normalize XYZ channels to unit sphere
         sampled_pts[:, 0:3] = pc_normalize(sampled_pts[:, 0:3])
 
-        # 3) Concatenate into (npoint × 6): (X,Y,Z,Nx,Ny,Nz)
-        sampled_feats = np.concatenate([sampled_pts, sampled_norms], axis=1).astype('float32')
+        # 3) Concatenate into (npoint, 6): (X, Y, Z, Nx, Ny, Nz)
+        sampled_feats = np.concatenate([sampled_pts, sampled_nrm], axis=1).astype('float32')
 
         return sampled_feats, label
 
     def _compute_normals(self, pts_np):
         """
         Estimate per-point normals via PCA over knn_normals neighbors.
-
         Input:
           pts_np: NumPy array of shape (M, 3)
         Returns:
-          normals: NumPy array of shape (M, 3), unit‐length
+          normals: NumPy array of shape (M, 3), unit-length normals
         """
-        # Build Open3D point cloud
+        # Build an Open3D point cloud
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(pts_np)
 
-        # Estimate normals with k‐NN
+        # Estimate normals with k-NN
         pcd.estimate_normals(
             search_param=o3d.geometry.KDTreeSearchParamKNN(knn=self.knn_normals),
             fast_normal_computation=False
         )
         normals = np.asarray(pcd.normals, dtype='float32')
 
-        # (Optional) You can consistently orient normals, if desired:
-        # pcd.orient_normals_consistent_tangent_plane(knn=self.knn_normals)
-        # normals = np.asarray(pcd.normals, dtype='float32')
-
         return normals
-
-# ──────────────────────────────────────────────────────────────────────────────
-# NEW: loader for a “.npy”‐based ScanObjectNN subset
-# Place this at the end of data.py, after ScanObjectNNDataset.
-
-import glob
-
-class ScanObjectNNSubset(torch.utils.data.Dataset):
-    """
-    Loads ScanObjectNN‐style samples from a directory of .npy files.
-    Expects, e.g.:
-
-        data/dev_scanObjectNN_subset/train/
-            train_000_data.npy    # shape (N_points, 3)
-            train_000_label.npy   # scalar or shape (1,)
-            train_001_data.npy
-            train_001_label.npy
-            ...
-
-        data/dev_scanObjectNN_subset/test/
-            test_000_data.npy
-            test_000_label.npy
-            ...
-    Returns (coords, label) pairs exactly like ScanObjectNNDataset.
-    """
-    def __init__(self, root_dir, npoint=1024, partition='train'):
-        super().__init__()
-        self.npoint = npoint
-        self.partition = partition
-        # e.g. root_dir = "/content/PVT_forked/data/dev_scanObjectNN_subset"
-        self.folder = os.path.join(root_dir, partition)  # “.../train” or “.../test”
-        # Find all *_data.npy in that folder:
-        pattern = os.path.join(self.folder, f"{partition}_*_data.npy")
-        self.data_paths = sorted(glob.glob(pattern))
-        if len(self.data_paths) == 0:
-            raise FileNotFoundError(f"No files matching {pattern}")
-        # We assume that for each “.../train_XXX_data.npy” there is a “train_XXX_label.npy”
-        # with the same XXX index.
-        # Build pairs:
-        self.pairs = []
-        for data_path in self.data_paths:
-            # data_path ends with something like “.../train_000_data.npy”
-            base = os.path.basename(data_path)  # “train_000_data.npy”
-            idx = base.replace(f"{partition}_", "").replace("_data.npy", "")  # “000”
-            label_path = os.path.join(self.folder, f"{partition}_{idx}_label.npy")
-            if not os.path.isfile(label_path):
-                raise FileNotFoundError(f"Could not find {label_path} for {data_path}")
-            self.pairs.append((data_path, label_path))
-
-    def __len__(self):
-        return len(self.pairs)
-
-    def __getitem__(self, idx):
-        data_path, label_path = self.pairs[idx]
-        pts = np.load(data_path)    # shape = (N_pts_original, 3)
-        lbl = np.load(label_path)   # either a scalar array or shape (1,)
-        if pts.ndim != 2 or pts.shape[1] < 3:
-            raise RuntimeError(f"Expected shape (n,3), got {pts.shape} in {data_path}")
-
-        # Subsample (or up‐sample) to exactly npoint:
-        N_orig = pts.shape[0]
-        if N_orig >= self.npoint:
-            choice = np.random.choice(N_orig, self.npoint, replace=False)
-        else:
-            choice = np.random.choice(N_orig, self.npoint, replace=True)
-        sampled = pts[choice, :]    # (npoint, 3)
-
-        # Normalize to unit sphere (same as pc_normalize from before)
-        sampled[:, 0:3] = pc_normalize(sampled[:, 0:3])
-
-        # Transpose to (3, npoint) to match the existing ScanObjectNNDataset API:
-        sampled = sampled.T         # shape = (3, npoint)
-
-        # Label: either scalar or array of shape (1,)
-        if np.isscalar(lbl):
-            lbl_scalar = int(lbl)
-        else:
-            lbl_scalar = int(lbl.squeeze())
-        return sampled.astype('float32'), lbl_scalar
-
-
-
-
