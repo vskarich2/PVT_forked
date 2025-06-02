@@ -76,7 +76,6 @@ if __name__ == "__main__":
                         help='learning rate (default: 0.001, 0.01 if using sgd)')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                         help='SGD momentum (default: 0.9)')
-
     parser.add_argument('--seed', type=int, default=1, metavar='S',
                         help='random seed (default: 1)')
     parser.add_argument('--num_points', type=int, default=1024,
