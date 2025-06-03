@@ -55,7 +55,7 @@ class ModelNetDataset(Dataset):
             partition='train',
             uniform=False,
             normal_channel=True,
-            cache_size=15000,
+            cache_size=30000,
             args=None
     ):
         """
