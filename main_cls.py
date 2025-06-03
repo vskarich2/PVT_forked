@@ -3,7 +3,7 @@ import warnings
 import sys
 import torch
 
-from PVT_forked_repo.PVT_forked.dynamic_config import ConfigWatcher
+from dynamic_config import ConfigWatcher
 
 # This enables verbose mode for error messages in torch.
 # TURN OFF IN PROD, SLOWS EVERYTHING DOWN
