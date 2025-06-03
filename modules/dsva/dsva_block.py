@@ -58,6 +58,32 @@ def generate_voxel_grid_centers(resolution, args):
     voxel_centers = grid.unsqueeze(0).expand(args.batch_size, -1, -1)  # shape: (B, R^3, 3)
     return voxel_centers.to(args.device)
 
+def reconstruct_dense_masked_scatter_2(updated_list, mask, original):
+    """
+    updated_list: list of length B, each entry is (V_b, C) in whatever dtype
+    mask:        BoolTensor of shape (B, V)
+    original:    Tensor of shape (B, V, C) (used only for shape/device)
+
+    We want `out` to live in the same dtype as updated_list[0], not necessarily original.dtype.
+    """
+    B, V, C = original.shape
+
+    # Determine the dtype from updated_list[0] (if the list is nonempty). Fallback to original.dtype.
+    if len(updated_list) > 0 and updated_list[0].numel() > 0:
+        target_dtype = updated_list[0].dtype
+    else:
+        target_dtype = original.dtype
+
+    # Create the output tensor using that target_dtype
+    out = torch.zeros(B, V, C, device=original.device, dtype=target_dtype)
+
+    for b in range(B):
+        # updated_list[b] already has dtype=target_dtype (half under autocast),
+        # so this assignment will no longer complain.
+        out[b, mask[b], :] = updated_list[b]
+
+    return out
+
 def reconstruct_dense_masked_scatter(updated_list, mask, original):
     # 1) Clone the original so we don’t overwrite it in-place (optional)
     out = original.clone()
@@ -143,7 +169,7 @@ class DSVABlock(nn.Module):
 
         # Need to reshape list of enriched token tensors
         # to flattened (B, R^3, C) for subsequent operations.
-        x = reconstruct_dense_masked_scatter(enriched_tokens, non_empty_mask, voxel_tokens)
+        x = reconstruct_dense_masked_scatter_2(enriched_tokens, non_empty_mask, voxel_tokens)
 
         # First residual connection and DropPath.
         # Applies DropPath to the attention output, scales by 0.5 (common in some architectures),
