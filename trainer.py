@@ -3,7 +3,7 @@ import warnings
 # ignore everything
 from tqdm.auto import tqdm, trange
 import torch
-torch.backends.cudnn.benchmark = True
+#torch.backends.cudnn.benchmark = True
 
 warnings.filterwarnings("ignore")
 import os
