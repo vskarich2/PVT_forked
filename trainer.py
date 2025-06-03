@@ -10,7 +10,7 @@ import os
 import argparse
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from data import ModelNetDataLoader
+from data import ModelNetDataset
 from torch.cuda.amp import autocast, GradScaler
 from model.pvt import pvt
 import numpy as np
