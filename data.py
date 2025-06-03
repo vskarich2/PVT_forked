@@ -48,7 +48,7 @@ def farthest_point_sample(xyz, npoint):
     return centroids
 
 class ModelNetDataset(Dataset):
-    """DataLoader for ModelNet40 dataset"""
+    """Dataset for ModelNet40 dataset"""
     def __init__(
             self,
             npoint=1024,

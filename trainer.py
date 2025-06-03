@@ -344,7 +344,7 @@ class Trainer():
         return data, label
 
     def get_test_loader(self):
-        test_loader = DataLoader(ModelNetDataLoader(
+        test_loader = DataLoader(ModelNetDataset(
             partition='test',
             npoint=self.args.num_points,
             args=self.args
