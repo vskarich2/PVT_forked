@@ -61,34 +61,77 @@ class SparseDynamicVoxelAttention(nn.Module):
             coord = voxel_coords[b][mask[b]]  # → (Vʼ, 3)
             Vp = token.size(0)  # Vʼ = number of non-empty voxels
 
-            # ——— 2) Compute all-pairs distances among the Vʼ voxel centers ————
-            # unsqueeze to (1, Vʼ, 3), so cdist returns (1, Vʼ, Vʼ)
+            # # ——— 2) Compute all-pairs distances among the Vʼ voxel centers ————
+            # # unsqueeze to (1, Vʼ, 3), so cdist returns (1, Vʼ, Vʼ)
+            # dist = torch.cdist(
+            #     coord.unsqueeze(0),
+            #     coord.unsqueeze(0),
+            #     p=2
+            # )  # → (1, Vʼ, Vʼ)
+            #
+            # # ——— 3) Get k_knn nearest *other* voxels for each anchor ————————
+            # # +1 because the nearest neighbor of each point is itself (dist=0)
+            # # .indices gives shape (1, Vʼ, k_knn+1), then we drop index 0
+            # knn_idx = dist.topk(
+            #     k=self.knn_size + 1,
+            #     dim=-1,
+            #     largest=False
+            # ).indices[:, :, 1:]  # → (1, Vʼ, k_knn)
+
+            # ——— 2) Compute all-pairs distances among the V' voxel centers ————
+            #    First squeeze to shape (V', V')
             dist = torch.cdist(
                 coord.unsqueeze(0),
                 coord.unsqueeze(0),
                 p=2
-            )  # → (1, Vʼ, Vʼ)
+            ).squeeze(0)  # → (V', V')
 
-            # ——— 3) Get k_knn nearest *other* voxels for each anchor ————————
-            # +1 because the nearest neighbor of each point is itself (dist=0)
-            # .indices gives shape (1, Vʼ, k_knn+1), then we drop index 0
-            knn_idx = dist.topk(
-                k=self.knn_size + 1,
-                dim=-1,
-                largest=False
-            ).indices[:, :, 1:]  # → (1, Vʼ, k_knn)
+            Vp = dist.size(0)  # number of non-empty voxels
+            effective_k = min(self.knn_size + 1, Vp)
+
+            # If there are no non-empty voxels, skip directly (handled earlier)
+            if Vp > 0:
+                knn_all = dist.topk(effective_k, largest=False, dim=1).indices  # (V', effective_k)
+
+                if effective_k > 1:
+                    knn_idx = knn_all[:, 1:]  # drop self-index → (V', effective_k-1)
+                else:
+                    # only self → no “other” neighbors
+                    knn_idx = torch.zeros(Vp, 0, dtype=torch.long, device=voxel_tokens.device)
+
+                # Pad or truncate so knn_idx is exactly (V', knn_size)
+                if knn_idx.shape[1] < self.knn_size:
+                    pad_width = self.knn_size - knn_idx.shape[1]
+                    padding = knn_idx.new_zeros(Vp, pad_width)
+                    knn_idx = torch.cat([knn_idx, padding], dim=1)
+                else:
+                    knn_idx = knn_idx[:, : self.knn_size]
+            else:
+                # Vp == 0 handled earlier—knn_idx will not be used
+                knn_idx = torch.zeros(0, self.knn_size, dtype=torch.long, device=voxel_tokens.device)
 
             # ——— 4) Gather the neighbor tokens & coords ————————————————
+
+            # # Helper that does for you: x_neighbors[i,j,:] = x[j, knn_idx[i,j]]
+            # knn_tokens = gather_neighbors_by_indices(
+            #     token.unsqueeze(0),  # (1, Vʼ, D)
+            #     knn_idx  # (1, Vʼ, k_knn)
+            # )  # → (1, Vʼ, k_knn, D)
+            #
+            # knn_coords = gather_neighbors_by_indices(
+            #     coord.unsqueeze(0),  # (1, Vʼ, 3)
+            #     knn_idx
+            # )  # → (1, Vʼ, k_knn, 3)
 
             # Helper that does for you: x_neighbors[i,j,:] = x[j, knn_idx[i,j]]
             knn_tokens = gather_neighbors_by_indices(
                 token.unsqueeze(0),  # (1, Vʼ, D)
-                knn_idx  # (1, Vʼ, k_knn)
+                knn_idx.unsqueeze(0)       # (1, V', knn_size)
             )  # → (1, Vʼ, k_knn, D)
 
             knn_coords = gather_neighbors_by_indices(
                 coord.unsqueeze(0),  # (1, Vʼ, 3)
-                knn_idx
+                knn_idx.unsqueeze(0)       # (1, V', knn_size)
             )  # → (1, Vʼ, k_knn, 3)
 
             # ——— 5) Build “anchor” tensors for pairing & compute relative pos ——
@@ -126,9 +169,16 @@ class SparseDynamicVoxelAttention(nn.Module):
                 dim=-1
             )  # both (1, Vʼ, k_select)
 
-            # map from local position in knn_idx to the original voxel index
+            # # map from local position in knn_idx to the original voxel index
+            # topk_indices = torch.gather(
+            #     knn_idx,  # (1, Vʼ, k_knn)
+            #     2,
+            #     topk_local_idx  # (1, Vʼ, k_select)
+            # )  # → (1, Vʼ, k_select)
+
+            knn_idx_batched = knn_idx.unsqueeze(0)
             topk_indices = torch.gather(
-                knn_idx,  # (1, Vʼ, k_knn)
+                knn_idx_batched,  # (1, Vʼ, knn_size)
                 2,
                 topk_local_idx  # (1, Vʼ, k_select)
             )  # → (1, Vʼ, k_select)
