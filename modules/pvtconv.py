@@ -164,8 +164,10 @@ class PVTConv(nn.Module):
         # This combines the spatially contextualized features from the voxel path
         # with the fine-grained, permutation-invariant features from the point path.
         # Both 'voxel_features' and 'point_out' are (B, C_out, N).
-        fused_features = voxel_features + point_out
-
+        if self.args.no_point_attention:
+            fused_features = voxel_features
+        else:
+            fused_features = voxel_features + point_out
         # Return the fused per-point features and the original (unchanged) coordinates.
         return fused_features, coords
 

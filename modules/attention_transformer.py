@@ -80,10 +80,8 @@ class Transformer(nn.Module):
             for blk in self.dsva_blocks:
                 x = blk(x, non_empty_mask)
             return x
-        elif self.args.use_window_attention:
+        else:
             # Iterate through each Sboxblock and apply it sequentially.
             for blk in self.blocks:
                 x = blk(x)
-            return x
-        else:
             return x

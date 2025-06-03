@@ -112,8 +112,7 @@ if __name__ == "__main__":
     parser.add_argument('--top_k_select_coarse', type=int, default=4,
                         help='Number of top neighbors to use in sparse attention.')
 
-    parser.add_argument('--use_window_attention', action='store_true', help='Use window attention')
-    parser.add_argument('--use_global_point_attention', action='store_true', help='Use window attention')
+    parser.add_argument('--no_point_attention', action='store_true', help='Use window attention')
 
     parser.add_argument('--saliency', action='store_true', help='Generate saliency map')
     parser.add_argument('--conf_matrix', action='store_true', help='Generate confusion matrix')
