@@ -102,6 +102,7 @@ if __name__ == "__main__":
 
 
     # Added arguments
+    parser.add_argument('--amp', action='store_true', help='Use amp speedup.')
     parser.add_argument('--knn_size_fine', type=int, default=10,
                         help='Number of total neighbors to use in KNN.')
     parser.add_argument('--top_k_select_fine', type=int, default=4,

@@ -10,6 +10,7 @@ import torch
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from data import ModelNetDataLoader
+from torch.cuda.amp import autocast, GradScaler
 from model.pvt import pvt
 import numpy as np
 from torch.utils.data import DataLoader
@@ -32,6 +33,14 @@ class Trainer():
         self.scheduler = CosineAnnealingLR(self.opt, self.args.epochs, eta_min=self.args.lr)
         self.criterion = cal_loss
         self.checkpoint_folder = self.create_checkpoint_folder_name()
+
+        # ==== AMP CHANGE #2: create a GradScaler
+        # only useful if CUDA is available
+        if self.device.type == 'cuda' and self.args.amp:
+            self.scaler = GradScaler()
+        else:
+            self.scaler = None
+        # ==== END AMP CHANGE
 
         if self.args.wandb:
             self.start_wandb()
@@ -71,7 +80,14 @@ class Trainer():
                     label = torch.LongTensor(label[:, 0].numpy())
                     data, label = data.to(self.device), label.to(self.device).squeeze()
                     data = data.permute(0, 2, 1)
-                    logits = self.model(data)
+
+                    # ==== AMP CHANGE #3: wrap inference in autocast (optional, but saves memory)
+                    if self.device.type == 'cuda' and self.args.amp:
+                        with autocast(enabled=(self.device.type == 'cuda')):
+                            logits = self.model(data)
+                    else:
+                        logits = self.model(data)
+                    # ==== END AMP CHANGE
 
                     preds = logits.max(dim=1)[1]
                     test_true.append(label.cpu().numpy())
@@ -149,7 +165,14 @@ class Trainer():
             for data, label in test_bar:
                 data, label = self.preprocess_test_data(data, label)
 
-                logits = self.model(data)
+                # ==== AMP CHANGE #4: wrap inference in autocast (optional)
+                if self.device.type == 'cuda' and self.args.amp:
+                    with autocast(enabled=(self.device.type == 'cuda')):
+                        logits = self.model(data)
+                else:
+                    logits = self.model(data)
+                # ==== END AMP CHANGE
+
                 loss = self.criterion(logits, label)
                 test_loss += loss.item()
 
@@ -197,8 +220,22 @@ class Trainer():
         for data, label in train_bar:
             data, label = self.preprocess_data(data, label)
             self.opt.zero_grad()
-            logits = self.model(data)
-            loss = self.criterion(logits, label)
+            # ==== AMP CHANGE #5: forward + loss under autocast
+            if self.device.type == 'cuda' and self.args.amp:
+                with autocast():
+                    logits = self.model(data)
+                    loss = self.criterion(logits, label)
+                # scale the loss, run backward, step optimizer via scaler
+                self.scaler.scale(loss).backward()
+                self.scaler.step(self.opt)
+                self.scaler.update()
+            else:
+                # CPU or no‐CUDA fallback
+                logits = self.model(data)
+                loss = self.criterion(logits, label)
+                loss.backward()
+                self.opt.step()
+            # ==== END AMP CHANGE
             curr_loss = loss.item()
             loss.backward()
             self.opt.step()
