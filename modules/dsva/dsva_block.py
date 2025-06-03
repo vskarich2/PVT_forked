@@ -102,8 +102,8 @@ class DSVABlock(nn.Module):
         self.attn  = SparseDynamicVoxelAttention(
             dim=self.out_channels,
             num_heads=self.heads,
-            knn_size=10,
-            top_k_select=4
+            knn_size=self.args.knn_size,
+            top_k_select=self.args.top_k_select,
         )
 
         # Layer Normalization layers. Applied before attention and MLP.

@@ -97,6 +97,10 @@ if __name__ == "__main__":
 
 
     # Added arguments
+    parser.add_argument('--knn_size', type=int, default=10,
+                        help='Number of total neighbors to use in KNN.')
+    parser.add_argument('--top_k_select', type=int, default=4,
+                        help='Number of top neighbors to use in sparse attention.')
     parser.add_argument('--weight_decay', type=float, default=1e-4,
                         help='Weight decay (L2 penalty)')
     parser.add_argument('--use_dsva', action='store_true', help='Use DSVA')
