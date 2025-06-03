@@ -309,7 +309,8 @@ class Trainer():
             num_workers=self.args.num_workers,
             batch_size=self.args.test_batch_size,
             shuffle=False,
-            drop_last=False
+            drop_last=False,
+            pin_memory=True
         )
         return test_loader
 
@@ -337,10 +338,9 @@ class Trainer():
             ds,
             batch_size=self.args.batch_size,
             shuffle=True,
-            num_workers=self.args.num_workers,
-            drop_last=True
+            drop_last=True,
+            pin_memory=True
         )
-
 
     def load_model(self, device):
         # Try to load models
