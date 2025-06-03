@@ -47,7 +47,7 @@ def farthest_point_sample(xyz, npoint):
         farthest = torch.max(distance, -1)[1]
     return centroids
 
-class ModelNetDataLoader(Dataset):
+class ModelNetDataset(Dataset):
     """DataLoader for ModelNet40 dataset"""
     def __init__(
             self,

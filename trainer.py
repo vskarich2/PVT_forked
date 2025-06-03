@@ -2,11 +2,12 @@ from __future__ import print_function
 import warnings
 # ignore everything
 from tqdm.auto import tqdm, trange
+import torch
+torch.backends.cudnn.benchmark = True
 
 warnings.filterwarnings("ignore")
 import os
 import argparse
-import torch
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from data import ModelNetDataLoader
@@ -237,7 +238,7 @@ class Trainer():
                 self.opt.step()
             # ==== END AMP CHANGE
             curr_loss = loss.item()
-        
+
             running_loss += curr_loss
             running_count += 1.0
             running_avg = running_loss / running_count
@@ -338,7 +339,7 @@ class Trainer():
         data[:, :, 0:3] = provider.shift_point_cloud(data[:, :, 0:3])
         data = torch.Tensor(data)
         label = torch.LongTensor(label[:, 0].numpy())
-        data, label = data.to(self.device), label.to(self.device).squeeze()
+        data, label = data.to(self.device, non_blocking=True), label.to(self.device, non_blocking=True).squeeze()
         data = data.permute(0, 2, 1)
         return data, label
 
@@ -359,7 +360,7 @@ class Trainer():
 
     def get_train_loader(self):
         if self.args.dataset == 'modelnet40':
-            ds = ModelNetDataLoader(
+            ds = ModelNetDataset(
                 npoint=self.args.num_points,
                 partition='train',
                 uniform=False,
@@ -381,7 +382,9 @@ class Trainer():
             batch_size=self.args.batch_size,
             shuffle=True,
             drop_last=True,
-            pin_memory=True
+            pin_memory=True,
+            persistent_workers=True,
+            prefetch_factor=4
         )
 
     def load_model(self, device):
