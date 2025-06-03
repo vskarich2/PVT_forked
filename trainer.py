@@ -383,8 +383,8 @@ class Trainer():
             shuffle=True,
             drop_last=True,
             pin_memory=True,
-            persistent_workers=True,
-            prefetch_factor=4
+            persistent_workers=self.args.persistent_workers,
+            prefetch_factor=self.args.prefetch_factor
         )
 
     def load_model(self, device):
