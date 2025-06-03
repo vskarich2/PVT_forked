@@ -1,0 +1,12 @@
+
+disable_dynamic: false
+disable_window:  true
+disable_global:  false
+
+learning_rate: 0.002
+batch_size:    32
+weight_decay: 0.0001
+knn_size_fine: 10
+top_k_select_fine: 4
+knn_size_coarse: 10
+top_k_select_coarse: 4

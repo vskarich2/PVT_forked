@@ -1,7 +1,8 @@
 from __future__ import print_function
-from tqdm.notebook import tqdm, trange
 import warnings
 # ignore everything
+from tqdm.auto import tqdm, trange
+
 warnings.filterwarnings("ignore")
 import os
 import argparse
@@ -31,7 +32,9 @@ class Trainer():
         self.scheduler = CosineAnnealingLR(self.opt, self.args.epochs, eta_min=self.args.lr)
         self.criterion = cal_loss
         self.checkpoint_folder = self.create_checkpoint_folder_name()
-        self.start_wandb()
+
+        if self.args.wandb:
+            self.start_wandb()
 
     def start_wandb(self):
         wandb.init(
@@ -50,6 +53,7 @@ class Trainer():
         wandb.watch(self.model, log="all", log_freq=1)
 
     def test(self):
+
         print("Testing Run Starting....")
 
         test_loader = self.get_test_loader()
@@ -113,11 +117,12 @@ class Trainer():
                 best_test_acc = float(test_acc)
                 self.save_new_checkpoint(epoch, test_acc)
 
-            wandb.log({
-                "train/TrainAvgLoss": train_avg_loss,
-                "train/LearningRate": self.scheduler.get_lr()[0],
-                "epoch": epoch
-            })
+            if self.args.wandb:
+                wandb.log({
+                    "train/TrainAvgLoss": train_avg_loss,
+                    "train/LearningRate": self.scheduler.get_lr()[0],
+                    "epoch": epoch
+                })
 
     def test_one_epoch(
             self,
@@ -175,6 +180,7 @@ class Trainer():
         return test_acc
 
     def train_one_epoch(self, epoch, train_loader):
+
         self.scheduler.step()
         self.model.train()
 
@@ -280,12 +286,13 @@ class Trainer():
 
         print(outstr)
 
-        wandb.log({
-            "test/TestAcc": test_acc,
-            "test/TestLoss": (test_loss / count),
-            "test/TestAvgPerClassAcc": avg_per_class_acc,
-            "epoch": epoch
-        })
+        if self.args.wandb:
+            wandb.log({
+                "test/TestAcc": test_acc,
+                "test/TestLoss": (test_loss / count),
+                "test/TestAvgPerClassAcc": avg_per_class_acc,
+                "epoch": epoch
+            })
 
         return test_acc
 

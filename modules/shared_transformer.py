@@ -7,9 +7,15 @@ __all__ = ['SharedTransformer']
 
 
 class SharedTransformer(nn.Module):
-    def __init__(self, in_channels, out_channels, dim=1):
+    def __init__(
+            self,
+            in_channels,
+            out_channels,
+            dim=1,
+            args=None
+    ):
         super().__init__()
-       
+        self.args = args
         self.conv1 = nn.Conv1d(in_channels,out_channels, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm1d(out_channels)
 

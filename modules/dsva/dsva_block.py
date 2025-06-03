@@ -98,12 +98,15 @@ class DSVABlock(nn.Module):
         self.heads = 4 # Fixed number of attention heads for this block
         self.dim_head = self.out_channels // self.heads # Dimension per head
 
+        knn_size = args.knn_size_fine if resolution == 30 else args.knn_size_coarse
+        top_k_select = args.top_k_select_fine if resolution == 30 else args.top_k_select_coarse
+
         # Initialize the DSVA Cross Attention module.
         self.attn  = SparseDynamicVoxelAttention(
             dim=self.out_channels,
             num_heads=self.heads,
-            knn_size=self.args.knn_size,
-            top_k_select=self.args.top_k_select,
+            knn_size=knn_size,
+            top_k_select=top_k_select,
         )
 
         # Layer Normalization layers. Applied before attention and MLP.

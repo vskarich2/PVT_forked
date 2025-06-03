@@ -142,7 +142,7 @@ class VoxelEncoder(nn.Module):
 
         # Add the learnable positional embedding.
         # This broadcasts the (1, R^3, C_out) pos_embedding to each item in the batch.
-        x += self.pos_embedding  # todo: Comment indicating potential future work or reminder.
+        x += self.pos_embedding
 
         # Apply dropout to the features after adding positional embeddings.
         x = self.pos_drop(x)
