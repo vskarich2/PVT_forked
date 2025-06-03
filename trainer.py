@@ -383,7 +383,7 @@ class Trainer():
             shuffle=True,
             drop_last=True,
             pin_memory=True,
-            persistent_workers=self.args.persistent_workers,
+            persistent_workers=self.args.persist_workers,
             prefetch_factor=self.args.prefetch_factor
         )
 
