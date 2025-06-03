@@ -353,7 +353,9 @@ class Trainer():
             batch_size=self.args.test_batch_size,
             shuffle=False,
             drop_last=False,
-            pin_memory=True
+            pin_memory=True,
+            persistent_workers=self.args.persist_workers,
+            prefetch_factor=self.args.prefetch_factor
         )
         return test_loader
 
