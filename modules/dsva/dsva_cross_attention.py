@@ -18,7 +18,7 @@ class EdgeScoringMLP(nn.Module):
 class SparseDynamicVoxelAttention(nn.Module):
     def __init__(
             self,
-            dim,
+            dim = None,
             num_heads=4,
             knn_size=10, # Number of neighbors in a neighborhood to consider
             top_k_select=4 # A top ranked subset extracted from knn_size to use for cross-attention
@@ -29,6 +29,7 @@ class SparseDynamicVoxelAttention(nn.Module):
         self.top_k_select = top_k_select
 
         self.edge_scorer = EdgeScoringMLP(self.dim)
+        self.edge_dropout = nn.Dropout(0.1)
         self.cross_attn = CrossAttention(dim=self.dim, num_heads=num_heads)
 
     def forward(self, voxel_tokens, voxel_coords, mask):
@@ -116,8 +117,11 @@ class SparseDynamicVoxelAttention(nn.Module):
             edge_scores = self.edge_scorer(edge_feats) \
                 .squeeze(-1)  # → (1, Vʼ, k_knn)
 
+            attn_weights = F.softmax(edge_scores, dim=-1)
+            attn_weights = self.edge_dropout(attn_weights)
+
             # ——— 7) Pick the top-k_select strongest edges ————————————
-            topk_scores, topk_local_idx = edge_scores.topk(
+            topk_scores, topk_local_idx = attn_weights.topk(
                 self.top_k_select,
                 dim=-1
             )  # both (1, Vʼ, k_select)
@@ -159,6 +163,7 @@ class CrossAttention(nn.Module):
         self.k_proj = nn.Linear(dim, dim)
         self.v_proj = nn.Linear(dim, dim)
         self.out_proj = nn.Linear(dim, dim)
+        self.attn_dropout = nn.Dropout(0.1)
 
     def forward(self, anchor_tokens, neighbor_tokens):
         B, V, D = anchor_tokens.shape
