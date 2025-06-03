@@ -237,9 +237,7 @@ class Trainer():
                 self.opt.step()
             # ==== END AMP CHANGE
             curr_loss = loss.item()
-            loss.backward()
-            self.opt.step()
-
+        
             running_loss += curr_loss
             running_count += 1.0
             running_avg = running_loss / running_count
