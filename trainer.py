@@ -454,8 +454,8 @@ class Trainer():
             logging_wrapper.set_description(f"TESTING {len(test_loader)} Batches...")
             with torch.no_grad():
                 for data, label in logging_wrapper:
-                    data, label = self.preprocess_test_data(data, label)
-                    logits = self.model(data)
+                    (feats, coords), label = self.preprocess_test_data(data, label)
+                    logits = self.model(feats) 
                     preds = logits.max(dim=1)[1]
                     test_true.append(label.cpu().numpy())
                     test_pred.append(preds.detach().cpu().numpy())
