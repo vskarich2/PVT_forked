@@ -5,7 +5,7 @@ from modules.dsva.dsva_block import DSVABlock
 from modules.sboxblock import Sboxblock
 import constants
 
-from PVT_forked_repo.PVT_forked.modules.dsva.dsva_block import DSVABlockLarge
+from modules.dsva.dsva_block import DSVABlockLarge
 
 
 class Transformer(nn.Module):
