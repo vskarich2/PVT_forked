@@ -1,7 +1,6 @@
 from __future__ import print_function
 import warnings
 
-from captum.attr import IntegratedGradients
 # ignore everything
 from tqdm.auto import tqdm, trange
 import torch
