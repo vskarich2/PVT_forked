@@ -55,14 +55,15 @@ class Transformer(nn.Module):
                       drop_path=drop_path1 if (i % 2 == 0) else drop_path2)
             for i in range(self.depth)])
 
+        drop_path = drop_path1 if args.drop_path == 1 else drop_path2
+
         if self.args.large_attn:
             self.dsva_blocks = nn.ModuleList([
                 DSVABlockLarge(
                     self.args,
                     out_channels,
                     resolution,
-                    # There are two DropPaths; using 1 right now for simplicity .
-                    drop_path=drop_path1)
+                    drop_path=drop_path)
             ])
         else:
             self.dsva_blocks = nn.ModuleList([
@@ -71,8 +72,7 @@ class Transformer(nn.Module):
                     out_channels,
                     resolution,
                     mlp_dims,
-                    # There are two DropPaths; using 1 right now for simplicity .
-                    drop_path=drop_path1)
+                    drop_path=drop_path)
             ])
 
     def forward(self, x, non_empty_mask):

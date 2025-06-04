@@ -107,6 +107,9 @@ if __name__ == "__main__":
     parser.add_argument('--prefetch_factor', type=int, default=2,
                         help='How much data to prefetch')
 
+    parser.add_argument('--drop_path', type=int, default=1,
+                        help='0.1 or 0.2 for attention dropout')
+
     parser.add_argument('--knn_size_fine', type=int, default=10,
                         help='Number of total neighbors to use in KNN.')
     parser.add_argument('--top_k_select_fine', type=int, default=4,
@@ -116,9 +119,10 @@ if __name__ == "__main__":
                         help='Number of total neighbors to use in KNN.')
     parser.add_argument('--top_k_select_coarse', type=int, default=4,
                         help='Number of top neighbors to use in sparse attention.')
-
     parser.add_argument('--no_point_attention', action='store_true', help='Use window attention')
+    parser.add_argument('--eight_heads', action='store_true', help='8 heads for coarse attention')
     parser.add_argument('--large_attn', action='store_true', help='Use window attention')
+    parser.add_argument('--scanobject_compare', action='store_true', help='Use window attention')
 
     parser.add_argument('--saliency', action='store_true', help='Generate saliency map')
     parser.add_argument('--conf_matrix', action='store_true', help='Generate confusion matrix')
@@ -150,6 +154,8 @@ if __name__ == "__main__":
 
     if not args.eval:
         trainer.fit()
+    elif args.scanobject_compare:
+        trainer.test_compare()
     else:
         trainer.test()
 
