@@ -79,8 +79,8 @@ def generate_saliency(args):
     # 1) Force CPU, dev subset
     device = 'cpu'
     args.device = 'cpu'
-    args.dev_scan_subset = True   # Setting args.dev_scan_subset = True makes the code load the small 10-sample “dev” split.
-    #args.dev_scan_subset = False   # Setting args.dev_scan_subset = False makes it load the full ScanObjectNN dataset.
+    #args.dev_scan_subset = True   # Setting args.dev_scan_subset = True makes the code load the small 10-sample “dev” split.
+    args.dev_scan_subset = False   # Setting args.dev_scan_subset = False makes it load the full ScanObjectNN dataset.
 
 
     # 2) Instantiate DSVA branch on CPU
