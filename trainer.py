@@ -225,37 +225,58 @@ class Trainer():
 
     def preprocess_data(self, data, label):
         """
-        Applies point‐cloud augmentations and converts to tensors.
-        Works for both ModelNet40 and ScanObjectNN (they both return (B, N, 6) arrays).
+        For ModelNet40: `data` comes in as (B, N, 6) → we split into
+            feats  = (B, 6, N)   and  coords = (B, 3, N).
+        For ScanObjectNN: `data` comes in as (B, N, 6) → we split into
+            feats  = (B, 6, N)   and  coords = (B, 3, N).
         """
+        # 1) NumPy-side augmentations
         data_np = data.numpy()                               # (B, N, C)
         data_np = provider.random_point_dropout(data_np)
         data_np[:, :, 0:3] = provider.random_scale_point_cloud(data_np[:, :, 0:3])
         data_np[:, :, 0:3] = provider.shift_point_cloud(data_np[:, :, 0:3])
 
-        data_t = torch.Tensor(data_np)  # (B, N, C)
-        label = torch.LongTensor(label[:, 0].numpy())
+        # 2) back to FloatTensor
+        data_t = torch.from_numpy(data_np.astype('float32'))  # (B, N, C)
 
-        # Move to device and permute to (B, C, N)
-        data_t = data_t.to(self.device, non_blocking=True)
-        label = label.to(self.device, non_blocking=True).squeeze()
-        data_t = data_t.permute(0, 2, 1)  # (B, 6, N)
+        # 3) split into feats / coords depending on dataset
+        if self.args.dataset == 'modelnet40':
+            # feats = all 6 channels, transposed to (B, 6, N)
+            feats = data_t.permute(0, 2, 1).to(self.device)           # (B, 6, N)
+            # coords = first-three dims, transposed to (B, 3, N)
+            coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
+        elif self.args.dataset == 'scanobjectnn':
+            # ScanObjectNNDataset already returns (npoint, 6), so data_t is (B, N, 6)
+            # feats = all 6 channels, transposed to (B, 6, N)
+            feats = data_t.permute(0, 2, 1).to(self.device)  # (B, 6, N)
+            # coords = first-three dims, transposed to (B, 3, N)
+            coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
+        else:
+            raise ValueError(f"Unsupported dataset: {self.args.dataset}")
 
-        return data_t, label
+        # 4) turn `label` into a 1D LongTensor of shape (B,)
+        label_tensor = torch.LongTensor(label).to(self.device)
+
+        return (feats, coords), label_tensor
 
     def preprocess_test_data(self, data, label):
         """
-        Same as preprocess_data but without random augmentations.
+        Exactly the same splitting logic as preprocess_data, but no random augmentations.
         """
-        data_np = data.numpy()                              # (B, N, C)
-        data_t = torch.Tensor(data_np)                      # (B, N, C)
-        label = torch.LongTensor(label[:, 0].numpy())
+        data_np = data.numpy()                                # (B, N, C)
+        data_t = torch.from_numpy(data_np.astype('float32'))   # (B, N, C)
 
-        data_t = data_t.to(self.device)
-        label = label.to(self.device).squeeze()
-        data_t = data_t.permute(0, 2, 1)  # (B, 6, N)
+        if self.args.dataset == 'modelnet40':
+            feats = data_t.permute(0, 2, 1).to(self.device)           # (B, 6, N)
+            coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
+        elif self.args.dataset == 'scanobjectnn':
+            feats = data_t.permute(0, 2, 1).to(self.device)  # (B, 6, N)
+            coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
+        else:
+            raise ValueError(f"Unsupported dataset: {self.args.dataset}")
 
-        return data_t, label
+        label_tensor = torch.LongTensor(label).to(self.device)  # (B,)
+        return (feats, coords), label_tensor
 
     def train_one_epoch(self, epoch, train_loader):
         self.scheduler.step()
@@ -270,13 +291,14 @@ class Trainer():
         running_loss = 0.0
         running_count = 0.0
 
+        
         for data, label in train_bar:
-            data, label = self.preprocess_data(data, label)
+            (feats, coords), label = self.preprocess_data(data, label)
             self.opt.zero_grad()
             # ==== AMP CHANGE #5: forward + loss under autocast
             if self.device.type == 'cuda' and self.args.amp:
                 with autocast():
-                    logits = self.model(data)
+                    logits = self.model(feats)
                     loss = self.criterion(logits, label)
                 # scale the loss, run backward, step optimizer via scaler
                 self.scaler.scale(loss).backward()
@@ -284,11 +306,12 @@ class Trainer():
                 self.scaler.update()
             else:
                 # CPU or no‐CUDA fallback
-                logits = self.model(data)
+                logits = self.model(feats)
                 loss = self.criterion(logits, label)
                 loss.backward()
                 self.opt.step()
             # ==== END AMP CHANGE
+        
 
             curr_loss = loss.item()
             running_loss += curr_loss
@@ -319,14 +342,14 @@ class Trainer():
         )
         with torch.no_grad():
             for data, label in test_bar:
-                data, label = self.preprocess_test_data(data, label)
+                (feats, coords), label = self.preprocess_test_data(data, label) 
 
                 # ==== AMP CHANGE #4: wrap inference in autocast (optional)
                 if self.device.type == 'cuda' and self.args.amp:
                     with autocast():
-                        logits = self.model(data)
+                        logits = self.model(feats)
                 else:
-                    logits = self.model(data)
+                    logits = self.model(feats)
                 # ==== END AMP CHANGE
 
                 loss = self.criterion(logits, label)
