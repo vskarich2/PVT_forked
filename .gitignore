@@ -7,6 +7,9 @@
 # Ignore all sub‐dirs of data/
 data/*
 
+checkpoints/**
+checkpoints/*
+
 # But keep the one we care about…
 !data/dev_modelnet40_normal_resampled/
 
