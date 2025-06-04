@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from torch.utils.data import Dataset
 import json
+import open3d as o3d
 
 def pc_normalize(pc):
     """Normalize point cloud to unit sphere
@@ -47,8 +48,8 @@ def farthest_point_sample(xyz, npoint):
         farthest = torch.max(distance, -1)[1]
     return centroids
 
-class ModelNetDataset(Dataset):
-    """Dataset for ModelNet40 dataset"""
+class ModelNetDataLoader(Dataset):
+    """DataLoader for ModelNet40 dataset"""
     def __init__(
             self,
             npoint=1024,
@@ -97,7 +98,7 @@ class ModelNetDataset(Dataset):
         self.datapath = [(shape_names[i], os.path.join(DATA_DIR, shape_names[i], shape_ids[partition][i]) + '.txt') 
                          for i in range(len(shape_ids[partition]))]
         
-        print('The size of %s data is %d'%(partition,len(self.datapath)))
+        print('The size of %s data is %d'%(partition, len(self.datapath)))
         
         self.cache_size = cache_size
         self.cache = {}  # Cache for loaded point clouds
@@ -121,7 +122,7 @@ class ModelNetDataset(Dataset):
             if self.uniform:
                 point_set = farthest_point_sample(point_set, self.npoints)
             else:
-                point_set = point_set[0:self.npoints,:]
+                point_set = point_set[0:self.npoints, :]
 
             # Normalize coordinates to unit sphere
             point_set[:, 0:3] = pc_normalize(point_set[:, 0:3])
@@ -154,7 +155,6 @@ def load_data_cls(partition):
     all_data = np.concatenate(all_data, axis=0)
     all_label = np.concatenate(all_label, axis=0)
     return all_data, all_label
-
 
 class _ShapeNetDataset(Dataset):
     def __init__(self, num_points, partition='trainval', with_normal=True, with_one_hot_shape_id=True,
@@ -234,7 +234,6 @@ class _ShapeNetDataset(Dataset):
         shape_label = np.array([1])
         shape_label = shape_label + shape_id
 
-
         return point_set, label[choice].transpose(), shape_label
 
     def __len__(self):
@@ -264,8 +263,6 @@ def translate_pointcloud(pointcloud):
     translated_pointcloud = np.add(np.multiply(pointcloud, xyz1), xyz2).astype('float32')
     return translated_pointcloud
 
-
-
 class ModelNet40(Dataset):
     def __init__(self, num_points, partition='train'):
         self.data, self.label = load_data_cls(partition)
@@ -286,14 +283,13 @@ class ModelNet40(Dataset):
 class S3DIS(Dataset):
     def __init__(self, num_points=4096, partition='train', test_area=5, with_normalized_coords=True):
         """
-        :param root: directory path to the s3dis dataset
         :param num_points: number of points to process for each scene
         :param partition: 'train' or 'test'
         :param with_normalized_coords: whether include the normalized coords in features (default: True)
         :param test_area: which area to holdout (default: 5)
         """
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-        self.root = os.path.join(BASE_DIR, 'data', 's3dis','pointcnn')
+        self.root = os.path.join(BASE_DIR, 'data', 's3dis', 'pointcnn')
         self.partition = partition
         self.num_points = num_points
         self.test_area = None if test_area is None else int(test_area)
@@ -368,3 +364,111 @@ class S3DIS(Dataset):
             return data, label
         else:
             return data[:-3, :], label
+
+# ──────────────────────────────────────────────────────────────────────────────
+# ─── NEW: ScanObjectNNDataset definition ─────────────────────────────────────
+
+class ScanObjectNNDataset(Dataset):
+    """
+    Loads ScanObjectNN from H5 files under either:
+      • data/ScanObjectNN/train/training_objectdataset_augmentedrot_scale75.h5
+        data/ScanObjectNN/test/test_objectdataset_augmentedrot_scale75.h5
+    or, if --dev_scan_subset is passed:
+      • data/dev_scanObjectNN_subset/train/training_subset_10.h5
+        data/dev_scanObjectNN_subset/test/test_subset_10.h5
+    Returns a (npoint × 6) array per sample: (X,Y,Z,Nx,Ny,Nz).
+    """
+    def __init__(self, npoint=1024, partition='train', args=None, knn_normals=30):
+        super().__init__()
+        self.npoint = npoint
+        self.partition = partition  # 'train' or 'test'
+        self.args = args
+        self.knn_normals = knn_normals
+
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+        # 1) Decide which “root folder” to use
+        if getattr(args, 'dev_scan_subset', False):
+            DATA_DIR = os.path.join(BASE_DIR, 'data', 'dev_scanObjectNN_subset')
+        else:
+            DATA_DIR = os.path.join(BASE_DIR, 'data', 'ScanObjectNN')
+
+        # 2) Pick the correct H5 filename
+        if getattr(args, 'dev_scan_subset', False):
+            # for the 10‐sample dev subset
+            if partition == 'train':
+                h5_name = 'training_subset_10.h5'
+            else:
+                h5_name = 'test_subset_10.h5'
+        else:
+            # for the full ScanObjectNN
+            if partition == 'train':
+                h5_name = 'training_objectdataset_augmentedrot_scale75.h5'
+            else:
+                h5_name = 'test_objectdataset_augmentedrot_scale75.h5'
+
+        # 3) Construct full path (DATA_DIR/<train-or-test>/<h5_name>)
+        h5_path = os.path.join(DATA_DIR, partition, h5_name)
+        if not os.path.exists(h5_path):
+            raise FileNotFoundError(f"Cannot find {h5_path}. "
+                                    f"Make sure the H5 file is in the correct {{train,test}} folder.")
+
+        # 4) Load entire H5 into memory
+        with h5py.File(h5_path, 'r') as f:
+            self.raw_data = f['data'][:]    # shape = (N_samples, M_pts, 3)
+            self.raw_label = f['label'][:]  # shape = (N_samples,)
+
+        # 5) Precompute normals for every point cloud (one pass)
+        self.normals_list = [None] * self.raw_data.shape[0]
+        for idx in range(self.raw_data.shape[0]):
+            pts = self.raw_data[idx]  # (M, 3)
+            self.normals_list[idx] = self._compute_normals(pts)  # returns (M, 3)
+
+    def __len__(self):
+        return self.raw_data.shape[0]
+
+    def __getitem__(self, idx):
+        """
+        Returns:
+          sampled_feats: (npoint, 6) float32 array = (X,Y,Z,Nx,Ny,Nz)
+          label:         int (0..num_classes-1)
+        """
+        pts = self.raw_data[idx]           # (M, 3)
+        nrm = self.normals_list[idx]       # (M, 3)
+        label = int(self.raw_label[idx])   # scalar
+
+        M = pts.shape[0]
+        # 1) Randomly sample exactly npoint indices (duplicate if M < npoint)
+        if M >= self.npoint:
+            choice = np.random.choice(M, self.npoint, replace=False)
+        else:
+            choice = np.random.choice(M, self.npoint, replace=True)
+
+        sampled_pts = pts[choice, :]   # (npoint, 3)
+        sampled_nrm = nrm[choice, :]   # (npoint, 3)
+
+        # 2) Normalize XYZ to unit sphere
+        sampled_pts[:, 0:3] = pc_normalize(sampled_pts[:, 0:3])
+
+        # 3) Concatenate to (npoint, 6)
+        sampled_feats = np.concatenate([sampled_pts, sampled_nrm], axis=1).astype('float32')
+
+        return sampled_feats, label
+
+    def _compute_normals(self, pts_np):
+        """
+        Estimate per-point normals via PCA over knn_normals neighbors.
+        Input:
+          pts_np: (M,3) NumPy array
+        Returns:
+          normals: (M,3) NumPy array, unit-length normals
+        """
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(pts_np)
+
+        pcd.estimate_normals(
+            search_param=o3d.geometry.KDTreeSearchParamKNN(knn=self.knn_normals),
+            fast_normal_computation=False
+        )
+        normals = np.asarray(pcd.normals, dtype='float32')
+        return normals
