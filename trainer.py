@@ -47,7 +47,10 @@ class Trainer():
 
         if self.args.wandb:
             self.start_wandb()
+
     def choose_scheduler(self):
+
+
         sched = CosineAnnealingLR(
             self.opt,
             self.args.epochs,

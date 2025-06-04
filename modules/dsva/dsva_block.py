@@ -181,3 +181,100 @@ class DSVABlock(nn.Module):
         x = self.drop_path(self.mlp(self.norm2(x))) * 0.5 + x
 
         return x
+
+class DSVABlockLarge(nn.Module):
+    """
+    A higher‐capacity DSVA block:
+      - expands D → 2D for attention
+      - uses a larger MLP hidden size (4D)
+      - then projects back 2D → D
+    """
+    def __init__(
+            self,
+            args,
+            out_channels,
+            resolution,
+            drop_path=0.
+    ):
+        """
+        Args:
+            args: must contain knn_size_fine, top_k_select_fine, knn_size_coarse, top_k_select_coarse,
+                  batch_size, device
+            out_channels (int): the original token dimension D
+            resolution (int): grid size per axis (R)
+            drop_path (float): drop probability for DropPath
+        """
+        super().__init__()
+        self.args = args
+        self.resolution = resolution
+        self.D = out_channels                    # original feature dim
+        self.embed_dim = out_channels * 2        # expanded dim for attention
+        # keep same head‐count (you could increase heads if desired)
+        self.heads = 4 if resolution == 30 else 8
+        self.dim_head = self.embed_dim // self.heads
+
+        # choose knn_size / top_k based on resolution
+        knn_size = args.knn_size_fine if resolution == 30 else args.knn_size_coarse
+        top_k_select = args.top_k_select_fine if resolution == 30 else args.top_k_select_coarse
+
+        # 1) Project D → 2D before attention
+        self.expand = nn.Linear(self.D, self.embed_dim)
+
+        # 2) Sparse dynamic attention in the higher dim
+        self.attn = SparseDynamicVoxelAttention(
+            dim=self.embed_dim,
+            num_heads=self.heads,
+            knn_size=knn_size,
+            top_k_select=top_k_select
+        )
+
+        # 3) Project 2D → D so the residual can add to the original tokens
+        self.contract = nn.Linear(self.embed_dim, self.D)
+
+        # LayerNorm operates in the expanded space
+        self.norm1 = nn.LayerNorm(self.embed_dim)
+        self.norm2 = nn.LayerNorm(self.embed_dim)
+
+        # FeedForward MLP in the expanded space, with hidden size 4D
+        self.mlp = FeedForward(self.embed_dim, self.embed_dim * 2)
+
+        self.drop_path = DropPath(drop_path)
+
+    def forward(self, voxel_tokens, non_empty_mask):
+        """
+        Args:
+            voxel_tokens: (B, V, D)
+            non_empty_mask: (B, V) bool mask of which voxels exist
+        Returns:
+            (B, V, D) after one DSVA block with higher capacity
+        """
+        B, V, D = voxel_tokens.shape
+        assert D == self.D, f"Expected D={self.D}, got {D}"
+        shortcut = voxel_tokens  # (B, V, D)
+
+        # --- 1) Expand & LayerNorm ---
+        x = self.expand(voxel_tokens)     # → (B, V, 2D)
+        x = self.norm1(x)                 # LN over last dimension (2D)
+
+        # --- 2) Compute voxel centers and apply sparse attention ---
+        voxel_coords = generate_voxel_grid_centers(self.resolution, self.args)  # (B, V, 3)
+        enriched = self.attn(x, voxel_coords, non_empty_mask)
+        # enriched: list length B; enriched[b].shape = (Vb, 2D)
+
+        # 3) Scatter enriched back into dense (B, V, 2D)
+        x = reconstruct_dense_masked_scatter_2(enriched, non_empty_mask, x)  # (B, V, 2D)
+
+        # --- 4) Project back to D for the first residual ---
+        x = self.contract(x)   # → (B, V, D)
+        x = self.drop_path(x) * 0.5 + shortcut  # residual #1: combine with original D
+
+        # --- 5) Second sub-layer: MLP in expanded space ---
+        x2 = self.expand(x)    # → (B, V, 2D)   (re-expand)
+        x2 = self.norm2(x2)    # LN in 2D space
+        x2 = self.mlp(x2)      # FeedForward in 2D space: (B, V, 2D)
+
+        # 6) Contract back to D for residual #2
+        x2 = self.contract(x2) # → (B, V, D)
+        x = self.drop_path(x2) * 0.5 + x   # residual #2
+
+        return x
