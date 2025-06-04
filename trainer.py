@@ -271,7 +271,7 @@ class Trainer():
             raise ValueError(f"Unsupported dataset: {self.args.dataset}")
 
         # 4) turn `label` into a 1D LongTensor of shape (B,)
-        label_tensor = torch.LongTensor(label).to(self.device)
+        label_tensor = label.long().to(self.device)
 
         return (feats, coords), label_tensor
 
