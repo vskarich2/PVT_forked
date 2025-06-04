@@ -6,7 +6,7 @@ from captum.attr import IntegratedGradients
 from tqdm.auto import tqdm, trange
 import torch
 
-from PVT_forked_repo.PVT_forked.data import ScanObjectNNDatasetModified
+from data import ScanObjectNNDatasetModified
 
 torch.backends.cudnn.benchmark = True
 
