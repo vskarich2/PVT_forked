@@ -10,7 +10,7 @@ import os
 import argparse
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from data import ModelNetDataset, ScanObjectNNDataset
+from data import ModelNetDataLoader, ScanObjectNNDataset
 from torch.cuda.amp import autocast, GradScaler
 from model.pvt import pvt
 import numpy as np
@@ -135,11 +135,11 @@ class Trainer():
 
     def get_train_loader(self):
         """
-        - ModelNet40: use ModelNetDataset
+        - ModelNet40: use ModelNetDataLoader
         - ScanObjectNN: use ScanObjectNNDataset (supports optional dev subset and knn_normals)
         """
         if self.args.dataset == 'modelnet40':
-            ds = ModelNetDataset(
+            ds = ModelNetDataLoader(
                 npoint=self.args.num_points,
                 partition='train',
                 uniform=False,
@@ -182,11 +182,11 @@ class Trainer():
 
     def get_test_loader(self):
         """
-        - ModelNet40: use ModelNetDataset (partition='test')
+        - ModelNet40: use ModelNetDataLoader (partition='test')
         - ScanObjectNN: use ScanObjectNNDataset (partition='test', optional dev subset)
         """
         if self.args.dataset == 'modelnet40':
-            ds = ModelNetDataset(
+            ds = ModelNetDataLoader(
                 partition='test',
                 npoint=self.args.num_points,
                 args=self.args
