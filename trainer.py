@@ -10,7 +10,7 @@ import os
 import argparse
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
-from data import ModelNetDataset
+from data import ModelNetDataset, ScanObjectNNDataset, ScanObjectNNDatasetModified
 from torch.cuda.amp import autocast, GradScaler
 from model.pvt import pvt
 import numpy as np
@@ -61,46 +61,6 @@ class Trainer():
 
         # This logs weights and gradients every epoch
         wandb.watch(self.model, log="all", log_freq=1)
-
-    def test(self):
-
-        print("Testing Run Starting....")
-
-        test_loader = self.get_test_loader()
-
-        self.model.eval()
-        test_true = []
-        test_pred = []
-
-        with tqdm(test_loader, unit="batch") as logging_wrapper:
-            logging_wrapper.set_description(f"TESTING {len(test_loader)} Batches...")
-
-            with torch.no_grad():
-                for data, label in logging_wrapper:
-
-                    label = torch.LongTensor(label[:, 0].numpy())
-                    data, label = data.to(self.device), label.to(self.device).squeeze()
-                    data = data.permute(0, 2, 1)
-
-                    # ==== AMP CHANGE #3: wrap inference in autocast (optional, but saves memory)
-                    if self.device.type == 'cuda' and self.args.amp:
-                        with autocast(enabled=(self.device.type == 'cuda')):
-                            logits = self.model(data)
-                    else:
-                        logits = self.model(data)
-                    # ==== END AMP CHANGE
-
-                    preds = logits.max(dim=1)[1]
-                    test_true.append(label.cpu().numpy())
-                    test_pred.append(preds.detach().cpu().numpy())
-
-                test_true = np.concatenate(test_true)
-                test_pred = np.concatenate(test_pred)
-                test_acc = metrics.accuracy_score(test_true, test_pred)
-                avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
-                outstr = 'Test :: test acc: %.6f, test avg acc: %.6f' % (test_acc, avg_per_class_acc)
-                print(outstr)
-
     def fit(self):
 
         print("\nTraining Run Starting....")
@@ -141,6 +101,42 @@ class Trainer():
                     "epoch": epoch
                 })
 
+    def test(self):
+
+        print("Testing Run Starting....")
+
+        test_loader = self.get_test_loader()
+
+        self.model.eval()
+        test_true = []
+        test_pred = []
+
+        with tqdm(test_loader, unit="batch") as logging_wrapper:
+            logging_wrapper.set_description(f"TESTING {len(test_loader)} Batches...")
+
+            with torch.no_grad():
+                for data, label in logging_wrapper:
+                    (feats, coords), label = self.preprocess_test_data(data, label)
+                    # ==== AMP CHANGE #3: wrap inference in autocast (optional, but saves memory)
+                    if self.device.type == 'cuda' and self.args.amp:
+                        with autocast(enabled=(self.device.type == 'cuda')):
+                            logits = self.model(feats)
+                    else:
+                        logits = self.model(feats)
+                    # ==== END AMP CHANGE
+
+                    preds = logits.max(dim=1)[1]
+                    test_true.append(label.cpu().numpy())
+                    test_pred.append(preds.detach().cpu().numpy())
+
+                test_true = np.concatenate(test_true)
+                test_pred = np.concatenate(test_pred)
+                test_acc = metrics.accuracy_score(test_true, test_pred)
+                avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
+                outstr = 'Test :: test acc: %.6f, test avg acc: %.6f' % (test_acc, avg_per_class_acc)
+                print(outstr)
+
+
     def test_one_epoch(
             self,
             epoch,
@@ -164,14 +160,14 @@ class Trainer():
         )
         with torch.no_grad():
             for data, label in test_bar:
-                data, label = self.preprocess_test_data(data, label)
+                (feats, coords), label = self.preprocess_test_data(data, label)
 
                 # ==== AMP CHANGE #4: wrap inference in autocast (optional)
                 if self.device.type == 'cuda' and self.args.amp:
                     with autocast(enabled=(self.device.type == 'cuda')):
-                        logits = self.model(data)
+                        logits = self.model(feats)
                 else:
-                    logits = self.model(data)
+                    logits = self.model(feats)
                 # ==== END AMP CHANGE
 
                 loss = self.criterion(logits, label)
@@ -219,12 +215,12 @@ class Trainer():
         running_count = 0.0
 
         for data, label in train_bar:
-            data, label = self.preprocess_data(data, label)
+            (feats, coords), label = self.preprocess_data(data, label)
             self.opt.zero_grad()
             # ==== AMP CHANGE #5: forward + loss under autocast
             if self.device.type == 'cuda' and self.args.amp:
                 with autocast():
-                    logits = self.model(data)
+                    logits = self.model(feats)
                     loss = self.criterion(logits, label)
                 # scale the loss, run backward, step optimizer via scaler
                 self.scaler.scale(loss).backward()
@@ -232,7 +228,7 @@ class Trainer():
                 self.scaler.update()
             else:
                 # CPU or no‐CUDA fallback
-                logits = self.model(data)
+                logits = self.model(feats)
                 loss = self.criterion(logits, label)
                 loss.backward()
                 self.opt.step()
@@ -286,11 +282,72 @@ class Trainer():
         }
         torch.save(checkpoint, full_checkpoint_path)
 
+    def preprocess_data(self, data, label):
+        if self.args.dataset == "modelnet40":
+            return self.preprocess_modelnet_data(data, label)
+        else:
+            return self.preprocess_scanobject_data(data, label)
+
+    def preprocess_modelnet_data(self, data, label):
+        data = data.numpy()
+        data = provider.random_point_dropout(data)
+        data[:, :, 0:3] = provider.random_scale_point_cloud(data[:, :, 0:3])
+        data[:, :, 0:3] = provider.shift_point_cloud(data[:, :, 0:3])
+        data = torch.Tensor(data)
+        label_tensor = torch.LongTensor(label[:, 0].numpy())
+        data, label = data.to(self.device, non_blocking=True), label.to(self.device, non_blocking=True).squeeze()
+
+        feats = data.permute(0, 2, 1)
+        coords = feats[:, :, 0:3].to(self.device)
+        return (feats, coords), label_tensor
+
+    def preprocess_scanobject_data(self, data, label):
+        """
+        For ScanObjectNN: `data` comes in as (B, N, 6) → we split into
+            feats  = (B, 6, N)   and  coords = (B, 3, N).
+        """
+        # 1) NumPy-side augmentations
+        data_np = data.numpy()  # (B, N, C)
+        data_np = provider.random_point_dropout(data_np)
+        data_np[:, :, 0:3] = provider.random_scale_point_cloud(data_np[:, :, 0:3])
+        data_np[:, :, 0:3] = provider.shift_point_cloud(data_np[:, :, 0:3])
+
+        # 2) back to FloatTensor
+        data_t = torch.from_numpy(data_np.astype('float32'))  # (B, N, C)
+
+        # 3) split into feats / coords depending on dataset
+
+        # ScanObjectNNDataset already returns (npoint, 6), so data_t is (B, N, 6)
+        # feats = all 6 channels, transposed to (B, 6, N)
+        feats = data_t.permute(0, 2, 1).to(self.device)  # (B, 6, N)
+        # coords = first-three dims, transposed to (B, 3, N)
+        coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
+
+        # 4) turn `label` into a 1D LongTensor of shape (B,)
+        label_tensor = label.long().to(self.device)
+
+        return (feats, coords), label_tensor
+
     def preprocess_test_data(self, data, label):
-        label = torch.LongTensor(label[:, 0].numpy())
+        if self.args.dataset == "modelnet40":
+            return self.preprocess_modelnet_test_data(data, label)
+        else:
+            return self.preprocess_scanobject_test_data(data, label)
+
+    def preprocess_scanobject_test_data(self, data, label):
+        data_np = data.numpy()  # (B, N, C)
+        data_t = torch.from_numpy(data_np.astype('float32'))  # (B, N, C)
+        feats = data_t.permute(0, 2, 1).to(self.device)  # (B, 6, N)
+        coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
+        label_tensor = torch.LongTensor(label).to(self.device)  # (B,)
+        return (feats, coords), label_tensor
+
+    def preprocess_modelnet_test_data(self, data, label):
+        label_tensor = torch.LongTensor(label[:, 0].numpy())
         data, label = data.to(self.device), label.to(self.device).squeeze()
-        data = data.permute(0, 2, 1)
-        return data, label
+        feats = data.permute(0, 2, 1)
+        coords = feats[:, :, 0:3].to(self.device)
+        return (feats, coords), label_tensor
 
     def check_stats(
             self,
@@ -332,64 +389,6 @@ class Trainer():
 
         return test_acc
 
-    def preprocess_data(self, data, label):
-        data = data.numpy()
-        data = provider.random_point_dropout(data)
-        data[:, :, 0:3] = provider.random_scale_point_cloud(data[:, :, 0:3])
-        data[:, :, 0:3] = provider.shift_point_cloud(data[:, :, 0:3])
-        data = torch.Tensor(data)
-        label = torch.LongTensor(label[:, 0].numpy())
-        data, label = data.to(self.device, non_blocking=True), label.to(self.device, non_blocking=True).squeeze()
-        data = data.permute(0, 2, 1)
-        return data, label
-
-    def get_test_loader(self):
-        test_loader = DataLoader(ModelNetDataset(
-            partition='test',
-            npoint=self.args.num_points,
-            args=self.args
-        ),
-            num_workers=self.args.num_workers,
-            batch_size=self.args.test_batch_size,
-            shuffle=False,
-            drop_last=False,
-            pin_memory=True,
-            persistent_workers=self.args.persist_workers,
-            prefetch_factor=self.args.prefetch_factor
-        )
-        return test_loader
-
-
-    def get_train_loader(self):
-        if self.args.dataset == 'modelnet40':
-            ds = ModelNetDataset(
-                npoint=self.args.num_points,
-                partition='train',
-                uniform=False,
-                normal_channel=True,
-                cache_size=15000,
-                args=self.args
-            )
-        elif self.args.dataset == 'scanobjectnn':
-            ds = ScanObjectNNDataset(
-                npoint=self.args.num_points,
-                partition='train',
-                args=self.args
-            )
-        else:
-            raise ValueError(f"Unsupported dataset: {self.args.dataset}")
-
-        return torch.utils.data.DataLoader(
-            ds,
-            batch_size=self.args.batch_size,
-            shuffle=True,
-            drop_last=True,
-            pin_memory=True,
-            persistent_workers=self.args.persist_workers,
-            prefetch_factor=self.args.prefetch_factor,
-            num_workers=self.args.num_workers
-        )
-
     def load_model(self, device):
         # Try to load models
         if self.args.model == 'pvt':
@@ -424,3 +423,157 @@ class Trainer():
                 weight_decay=self.args.weight_decay
             )
         return opt
+
+    def test_one_epoch_compare(self, epoch, test_loader, train_avg_loss, best_test_acc):
+        test_loss = 0.0
+        count = 0.0
+        test_pred = []
+        test_true = []
+        self.model.eval()
+
+        test_bar = tqdm(
+            test_loader,
+            desc=f"Testing  (Epoch {epoch + 1}/{self.args.epochs})",
+            leave=False,
+            unit="batch"
+        )
+        with torch.no_grad():
+            for data, label in test_bar:
+                (feats, coords), label = self.preprocess_test_data(data, label)
+
+                # ==== AMP CHANGE #4: wrap inference in autocast (optional)
+                if self.device.type == 'cuda' and self.args.amp:
+                    with autocast():
+                        logits = self.model(feats)
+                else:
+                    logits = self.model(feats)
+                # ==== END AMP CHANGE
+
+                loss = self.criterion(logits, label)
+                test_loss += loss.item()
+
+                preds = logits.max(dim=1)[1]
+                count += 1.0
+                test_true.append(label.cpu().numpy())
+                test_pred.append(preds.detach().cpu().numpy())
+
+                running_avg_loss = test_loss / count
+                test_bar.set_postfix(test_loss=running_avg_loss)
+
+        test_bar.close()
+        test_acc = self.check_stats(
+            count,
+            epoch,
+            test_loss,
+            test_pred,
+            test_true,
+            train_avg_loss,
+            best_test_acc
+        )
+        return test_acc
+
+    def get_train_loader(self):
+        """
+        - ModelNet40: use ModelNetDataLoader
+        - ScanObjectNN: use ScanObjectNNDataset (supports optional dev subset and knn_normals)
+        """
+        if self.args.dataset == 'modelnet40':
+            return self.get_modelnet_train_loader()
+        elif self.args.dataset == 'scanobjectnn':
+            return self.get_scanobject_trainloader()
+        else:
+            raise ValueError(f"Unsupported dataset: {self.args.dataset}")
+
+    def get_test_loader(self):
+        """
+        - ModelNet40: use ModelNetDataLoader (partition='test')
+        - ScanObjectNN: use ScanObjectNNDataset (partition='test', optional dev subset)
+        """
+        if self.args.dataset == 'modelnet40':
+            return self.get_modelnet_test_loader()
+        else:
+           return self.get_scanobject_test_loader()
+
+    def get_modelnet_train_loader(self):
+        ds = ModelNetDataset(
+            npoint=self.args.num_points,
+            partition='train',
+            uniform=False,
+            normal_channel=True,
+            cache_size=15000,
+            args=self.args
+        )
+        return torch.utils.data.DataLoader(
+            ds,
+            batch_size=self.args.batch_size,
+            shuffle=True,
+            drop_last=True,
+            pin_memory=True,
+            persistent_workers=self.args.persist_workers,
+            prefetch_factor=self.args.prefetch_factor,
+            num_workers=self.args.num_workers
+        )
+
+    def get_scanobject_trainloader(self):
+
+        ds = ScanObjectNNDataset(
+            npoint=self.args.num_points,
+            partition='train',
+            args=self.args,
+            knn_normals=self.args.knn_normals
+        )
+
+        return torch.utils.data.DataLoader(
+            ds,
+            batch_size=self.args.batch_size,
+            shuffle=True,
+            drop_last=True,
+            pin_memory=True,
+            persistent_workers=self.args.persist_workers,
+            prefetch_factor=self.args.prefetch_factor,
+            num_workers=self.args.num_workers
+        )
+
+    def get_scanobject_test_loader(self):
+        if self.args.dataset == 'scanobjectnn' and self.args.scanobject_compare:
+            ds = ScanObjectNNDatasetModified(
+                npoint=self.args.num_points,
+                partition='test',
+                args=self.args,
+                knn_normals=self.args.knn_normals
+            )
+        else:
+            ds = ScanObjectNNDataset(
+                npoint=self.args.num_points,
+                partition='test',
+                args=self.args,
+                knn_normals=self.args.knn_normals
+            )
+
+            return DataLoader(
+                ds,
+                batch_size=self.args.test_batch_size,
+                shuffle=False,
+                num_workers=self.args.num_workers,
+                drop_last=False,
+                pin_memory=True,
+                persistent_workers=self.args.persist_workers,
+                prefetch_factor=self.args.prefetch_factor
+            )
+
+    def get_modelnet_test_loader(self):
+        test_loader = DataLoader(ModelNetDataset(
+            partition='test',
+            npoint=self.args.num_points,
+            args=self.args
+        ),
+            num_workers=self.args.num_workers,
+            batch_size=self.args.test_batch_size,
+            shuffle=False,
+            drop_last=False,
+            pin_memory=True,
+            persistent_workers=self.args.persist_workers,
+            prefetch_factor=self.args.prefetch_factor
+        )
+        return test_loader
+

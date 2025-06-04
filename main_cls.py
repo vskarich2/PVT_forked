@@ -89,6 +89,8 @@ if __name__ == "__main__":
                         help='num of threads to use')
     parser.add_argument('--dropout', type=float, default=0.5,
                         help='dropout rate')
+    parser.add_argument('--knn_normals', type=int, default=30,
+                        help='knn normals value')
 
     # Modified arguments
     parser.add_argument('--model_path', type=str, default='None', metavar='N',
