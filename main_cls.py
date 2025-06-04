@@ -108,7 +108,7 @@ if __name__ == "__main__":
                         help='How much data to prefetch')
 
     parser.add_argument('--drop_path', type=int, default=1,
-                        help='0.1 or 0.2 for attention dropout')
+                        help='1 or 2 for attention dropout')
 
     parser.add_argument('--knn_size_fine', type=int, default=10,
                         help='Number of total neighbors to use in KNN.')

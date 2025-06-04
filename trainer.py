@@ -2,8 +2,8 @@ from __future__ import print_function
 import warnings
 
 # ignore everything
-from tqdm.notebook import tqdm, trange
-
+#from tqdm.notebook import tqdm, trange
+from tqdm.auto import tqdm, trange
 #from tqdm import tqdm, trange
 import torch
 
