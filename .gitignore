@@ -12,9 +12,12 @@ checkpoints/*
 
 # But keep the one we care about…
 !data/dev_modelnet40_normal_resampled/
+!data/dev_scanObjectNN_subset/
 
 # …and all its files/subfolders
 !data/dev_modelnet40_normal_resampled/**
+!data/dev_scanObjectNN_subset/**
+
 
 v/
 ENV/

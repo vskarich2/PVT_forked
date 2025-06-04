@@ -531,224 +531,146 @@ class Trainer():
                     test_acc, avg_per_class_acc)
                 print(outstr)
 
-    # def test_compare(self):
-    #     print("ScanObject Compare Testing Run Starting....")
-    #     test_loader = self.get_test_loader()
-    #     self.model.eval()
-    #     test_true = []
-    #     test_pred = []
-    #     class_names = []
-    #     features = []
-    #     coordinates = []
-    #
-    #     with tqdm(test_loader, unit="batch") as logging_wrapper:
-    #         logging_wrapper.set_description(f"TESTING {len(test_loader)} Batches...")
-    #         with torch.no_grad():
-    #             for data, label, classname in logging_wrapper:
-    #                 (feats, coords), label = self.preprocess_test_data(data, label)
-    #                 logits = self.model(feats)
-    #                 preds = logits.max(dim=1)[1]
-    #                 test_true.append(label.cpu().numpy())
-    #                 test_pred.append(preds.detach().cpu().numpy())
-    #
-    #                 class_names.append(classname)
-    #                 coordinates.append(coords.cpu().numpy())
-    #                 features.append(feats.cpu().numpy())
-    #
-    #             test_true = np.concatenate(test_true)
-    #             test_pred = np.concatenate(test_pred)
-    #             class_names = np.concatenate(class_names)
-    #             coordinates = np.concatenate(coordinates)
-    #             features = np.concatenate(features)
-    #
-    #             test_acc = metrics.accuracy_score(test_true, test_pred)
-    #             avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
-    #             outstr = 'Test :: test acc: %.6f, test avg acc: %.6f' % (
-    #                 test_acc, avg_per_class_acc)
-    #             print(outstr)
-    #
-    #             return (test_pred, class_names, coordinates, features)
-    import torch
-    import torch.nn.functional as F
-    import numpy as np
-    from tqdm.auto import tqdm
-    from sklearn import metrics
-
-    # (If you later want to use Captum for Integrated Gradients / SmoothGrad):
-    # from captum.attr import IntegratedGradients, NoiseTunnel
-
-    from captum.attr import IntegratedGradients
-    import torch
-    import torch.nn.functional as F
-    import numpy as np
-    from tqdm.auto import tqdm
-    import sklearn.metrics as metrics
-
-
-
-    def test_compare(self, n_steps: int = 50):
+    def test_compare_with_hooks(self):
         """
-        Run through the test set, but first voxelize each raw point‐cloud so that
-        DSVA never tries to index a mismatch between coords and masks.
-
-        For each example we collect:
-          - prediction
-          - ground‐truth label
-          - class name (string)
-          - coords of each *occupied voxel* (V_occupied × 3)
-          - raw voxel features (V_occupied × C_voxel)
-          - IG saliency per voxel (V_occupied × C_voxel)
-
-        Returns a list of dictionaries, one per test example, each containing:
-            {
-              "pred": int,
-              "true": int,
-              "classname": str,
-              "coords":   np.ndarray of shape (V_occupied, 3),
-              "features": np.ndarray of shape (V_occupied, C_voxel),
-              "ig_attr":  np.ndarray of shape (V_occupied, C_voxel)
-            }
+        Run through the ScanObjectNN test set, and for each example, do:
+          - Forward pass → get `logits`.
+          - Pick the predicted‐class logit, call `.backward()`.
+          - Read out `model.grad_enc1`, `model.grad_enc2`, `model.grad_enc3`,
+            which now contain gradient tensors of shape [1, Ck, R, R, R].
+          - Mask out “empty” voxels and convert each [Ck, R³] → [V_occ, Ck].
+          - Return a list of dicts, one per test‐example, containing:
+                { "pred": int,
+                  "true": int,
+                  "classname": str,
+                  "coords": (V_occ, 3),
+                  "feat_enc1": (V_occ, C1),  "grad_enc1": (V_occ, C1),
+                  "feat_enc2": (V_occ, C2),  "grad_enc2": (V_occ, C2),
+                  "feat_enc3": (V_occ, C3),  "grad_enc3": (V_occ, C3)
+                }
         """
-        print("ScanObject Compare Testing Run Starting (voxelized)…")
-        test_loader = self.get_test_loader()
+
         self.model.eval()
+        test_loader = self.get_test_loader()
 
-        # Captum’s IntegratedGradients, applied to the PVT model’s voxel‐input.
-        ig = IntegratedGradients(self.model)
-
-        all_items = []
+        all_results = []
         total_true = []
         total_pred = []
 
         for (data, label, classname) in tqdm(test_loader, desc="Testing Batches"):
-            # --------------------------------------------------------
-            # 1) Preprocess exactly as in training, *up to* raw point‐cloud → (feats, coords)
-            # --------------------------------------------------------
-            # data: [B, N_points, channels], label: [B, 1], classname: [B]
-            (feats, raw_coords), label = self.preprocess_test_data(data, label)
-            # Now:
-            #   feats.shape     == (B, C_point, N_points)
-            #   raw_coords.shape== (B, N_points, 3)
-            #   label.shape     == (B,)
-            B, C_point, N = feats.shape
+            # 1) Preprocess raw points → (feats, coords) exactly as training does
+            (feats, coords), label = self.preprocess_test_data(data, label)
+            # feats: [B, C_point, N_pts], coords: [B, N_pts, 3], label: [B]
 
-            feats = feats.to(self.device).detach()  # [B, C_point, N_points]
-            raw_coords = raw_coords.to(self.device)  # [B, N_points, 3]
+            feats = feats.to(self.device)
+            coords = coords.to(self.device)
             label = label.to(self.device)
 
-            # --------------------------------------------------------
-            # 2) VOXELIZATION: turn raw point tokens into a voxel grid
-            #    (voxel_tokens: [B, C_voxel, R³],
-            #     voxel_coords: [B, R³, 3],
-            #     non_empty_mask: [B, R³])
-            # --------------------------------------------------------
-            # Replace "self.model.voxel_encoder" with the actual call your PVT uses.
-            # For instance, if the very first PVTConv block has an attribute
-            #   `self.model.point_features[0].voxel_encoder`, call that.
-            #
-            # Here I assume there’s a convenience method on your model:
-            voxel_tokens, voxel_coords, non_empty_mask = \
-                self.model.voxel_encoder(feats, raw_coords)
-            # Now:
-            #   voxel_tokens.shape   == (B, C_voxel, R³)
-            #   voxel_coords.shape   == (B, R³, 3)
-            #   non_empty_mask.shape == (B, R³)
+            B, _, _ = feats.shape
 
-            # Sanity‐check: non_empty_mask[b].sum() == number of occupied voxels in sample b.
-            # At this point DSVA’s indexing (coord = voxel_coords[b][mask[b]]) will no longer blow up.
+            # a) Zero out any previously stored gradients/hooks
+            self.model.grad_enc1 = None
+            self.model.grad_enc2 = None
+            self.model.grad_enc3 = None
+            self.model.zero_grad()
 
-            # --------------------------------------------------------
-            # 3) Forward‐pass from voxel‐tokens → classification logits
-            #    (We pass voxel_tokens into the rest of PVT’s pipeline.)
-            # --------------------------------------------------------
-            # If your PVT model expects the raw (point → voxel → attention → classifier) all in one go,
-            # you might have to “splice” the network so that the Captum IG forward‐function knows to start at
-            # the voxel‐token input. In many PVT implementations, the first few layers do point→voxel;
-            # after that, everything is “voxel→classification.”
-            #
-            # For simplicity, let’s assume your model’s forward() can also accept
-            #   voxel_tokens directly (bypassing the raw‐points stage). If it cannot,
-            # you can wrap a tiny helper:
-            #
-            #   def forward_from_voxels(voxel_tokens):
-            #       return self.model.classifier( self.model.transformer_blocks(voxel_tokens) )
-            #
-            # Here I assume that `self.model` is written so that passing `(voxel_tokens, voxel_coords, non_empty_mask)`
-            # still yields the final logits. If not, insert whatever sub‐module of PVT consumes `(voxel_tokens, voxel_coords, mask)`
-            # and produces a `[B, num_classes]` tensor.
-            logits = self.model(voxel_tokens, voxel_coords, non_empty_mask)
-            # → logits.shape == (B, num_classes)
+            # b) Forward pass through the entire network
+            logits = self.model(feats, coords)  # shape [B, num_classes]
+            preds = logits.argmax(dim=1)  # shape [B]
 
-            preds = logits.argmax(dim=1)  # [B]
             total_true.append(label.cpu().numpy())
             total_pred.append(preds.cpu().numpy())
 
-            # --------------------------------------------------------
-            # 4) For each sample in the batch, compute IG attributions *on the voxel_tokens input*
-            # --------------------------------------------------------
-            B_voxel, C_voxel, R3 = voxel_tokens.shape
+            # c) For each sample in the batch, do a backward on that sample’s logit
+            for i in range(B):
+                # Zero‐grad activations from previous iteration
+                self.model.zero_grad()
+                self.model.grad_enc1 = None
+                self.model.grad_enc2 = None
+                self.model.grad_enc3 = None
 
-            for i in range(B_voxel):
-                # a) isolate the i‐th example’s voxel tokens and mask
-                vtok_i = voxel_tokens[i: i + 1]  # [1, C_voxel, R³]
-                vcoord_i = voxel_coords[i]  # [R³, 3]
-                mask_i = non_empty_mask[i]  # [R³]
-                true_i = label[i].item()
-                pred_i = preds[i].item()
-                class_i = classname[i]
+                # Pick out the i‐th logit for the predicted class
+                pred_class_i = preds[i].item()
+                scalar_logit = logits[i, pred_class_i]  # a scalar tensor
 
-                # b) build a baseline of all‐zeros for Integrated Gradients
-                baseline_i = torch.zeros_like(vtok_i)  # [1, C_voxel, R³]
+                # Backward this scalar → populates grad_enc1/2/3
+                scalar_logit.backward(retain_graph=True)
 
-                # c) run IG.attribute on the *voxel token* input
-                ig_attr_tensor, delta = ig.attribute(
-                    inputs=vtok_i,  # [1, C_voxel, R³]
-                    baselines=baseline_i,
-                    target=pred_i,
-                    n_steps=n_steps,
-                    return_convergence_delta=True
-                )
-                # ig_attr_tensor: [1, C_voxel, R³]
+                # By now, after backward, each model.grad_encK is a [B, Ck, R, R, R] tensor
+                g1 = self.model.grad_enc1[i].detach().cpu()  # [C1, R, R, R]
+                g2 = self.model.grad_enc2[i].detach().cpu()  # [C2, R, R, R]
+                g3 = self.model.grad_enc3[i].detach().cpu()  # [C3, R, R, R]
 
-                # d) move to CPU & numpy and reshape:
-                ig_np = ig_attr_tensor.detach().cpu().numpy().squeeze(0)  # [C_voxel, R³]
-                ig_np = ig_np.transpose(1, 0)  # [R³, C_voxel]
+                # Also pull the forward activation (we laced them into self._actK)
+                a1 = self.model._act1[i].detach().cpu()  # [C1, R, R, R]
+                a2 = self.model._act2[i].detach().cpu()  # [C2, R, R, R]
+                a3 = self.model._act3[i].detach().cpu()  # [C3, R, R, R]
 
-                # e) also grab the *raw voxel‐token values* so you can inspect them:
-                vtok_np = vtok_i.detach().cpu().numpy().squeeze(0)  # [C_voxel, R³]
-                vtok_np = vtok_np.transpose(1, 0)  # [R³, C_voxel]
+                #  d) Flatten each [Ck, R, R, R] → [Ck, R³], then transpose → [R³, Ck]
+                C1, Rx, Ry, Rz = a1.shape
+                R_cubed = Rx * Ry * Rz
 
-                # f) only keep the “occupied voxels” — i.e. where mask_i == True
-                occupied_idx = mask_i.nonzero(as_tuple=False).squeeze(1)  # (V_occupied,)
-                coords_occ = vcoord_i[occupied_idx].detach().cpu().numpy()  # [V_occ, 3]
-                feat_occ = vtok_np[occupied_idx]  # [V_occ, C_voxel]
-                ig_occ = ig_np[occupied_idx]  # [V_occ, C_voxel]
+                flat_a1 = a1.reshape(C1, R_cubed).transpose(0, 1)  # [R³, C1]
+                flat_g1 = g1.reshape(C1, R_cubed).transpose(0, 1)  # [R³, C1]
 
-                # g) collect everything into a dictionary
+                C2, _, _, _ = a2.shape
+                flat_a2 = a2.reshape(C2, R_cubed).transpose(0, 1)  # [R³, C2]
+                flat_g2 = g2.reshape(C2, R_cubed).transpose(0, 1)  # [R³, C2]
+
+                C3, _, _, _ = a3.shape
+                flat_a3 = a3.reshape(C3, R_cubed).transpose(0, 1)  # [R³, C3]
+                flat_g3 = g3.reshape(C3, R_cubed).transpose(0, 1)  # [R³, C3]
+
+                # e) Build the same “non_empty_mask” that the model uses for voxelization.
+                #    Assume the model has a utility for that. For example:
+                non_empty_mask = self.model.compute_non_empty_mask(feats[i:i + 1], voxel_coords=vcoords[i:i + 1])
+                #    → shape [1, R³], boolean
+                mask1d = non_empty_mask.view(-1)  # [R³] on CPU
+
+                # f) Select only the occupied voxels (mask1d == True).  Let V_occ = mask1d.sum().
+                occ_idx = torch.nonzero(mask1d, as_tuple=False).squeeze(1).numpy()  # indices of occupied voxels
+
+                coords_np = vcoords[i].detach().cpu().numpy()  # [R³, 3]
+                coords_occ = coords_np[occ_idx]  # [V_occ, 3]
+
+                feat1_occ = flat_a1[occ_idx]  # [V_occ, C1]
+                grad1_occ = flat_g1[occ_idx]  # [V_occ, C1]
+
+                feat2_occ = flat_a2[occ_idx]  # [V_occ, C2]
+                grad2_occ = flat_g2[occ_idx]  # [V_occ, C2]
+
+                feat3_occ = flat_a3[occ_idx]  # [V_occ, C3]
+                grad3_occ = flat_g3[occ_idx]  # [V_occ, C3]
+
+                # g) Build a dictionary for this single example
                 item = {
-                    "pred": pred_i,
-                    "true": true_i,
-                    "classname": class_i,
+                    "pred": pred_class_i,
+                    "true": label[i].item(),
+                    "classname": classname[i],
                     "coords": coords_occ,  # shape (V_occ, 3)
-                    "features": feat_occ,  # shape (V_occ, C_voxel)
-                    "ig_attr": ig_occ  # shape (V_occ, C_voxel)
+                    "feat1": feat1_occ,  # shape (V_occ, C1)
+                    "grad1": grad1_occ,  # shape (V_occ, C1)
+                    "feat2": feat2_occ,  # shape (V_occ, C2)
+                    "grad2": grad2_occ,  # shape (V_occ, C2)
+                    "feat3": feat3_occ,  # shape (V_occ, C3)
+                    "grad3": grad3_occ  # shape (V_occ, C3)
                 }
-                all_items.append(item)
+                all_results.append(item)
 
-            # Clear gradients to save memory
-            if vtok_i.grad is not None:
-                vtok_i.grad.zero_()
-            torch.cuda.empty_cache()
+                # h) Clear out gradients before next loop iteration
+                self.model.zero_grad()
+                self.model.grad_enc1 = None
+                self.model.grad_enc2 = None
+                self.model.grad_enc3 = None
 
-        # --------------------------------------------------------
-        # 5) Compute overall accuracy & return
-        # --------------------------------------------------------
-        total_true = np.concatenate(total_true)  # shape (num_test,)
-        total_pred = np.concatenate(total_pred)  # shape (num_test,)
+        # 13) Compute final accuracy over entire test set
+        total_true = np.concatenate(total_true)
+        total_pred = np.concatenate(total_pred)
         test_acc = metrics.accuracy_score(total_true, total_pred)
-        avg_per_class_acc = metrics.balanced_accuracy_score(total_true, total_pred)
-        print(f"Test :: acc: {test_acc:.4f}, avg per‐class: {avg_per_class_acc:.4f}")
+        avg_class = metrics.balanced_accuracy_score(total_true, total_pred)
+        print(f"Test :: acc={test_acc:.4f}, avg‐per‐class={avg_class:.4f}")
 
-        return all_items
+        return all_results
+
 
 
