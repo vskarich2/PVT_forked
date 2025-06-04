@@ -436,7 +436,7 @@ class ScanObjectNNDatasetModified(Dataset):
                 nm = line.strip()
                 if nm:
                     self.shape_names.append(nm)
-        # Sanity check: there should be exactly 20 names
+        # Sanity check: there should be exactly 15 names
         if len(self.shape_names) != 15:
             raise ValueError(f"Expected 15 class names, but found {len(self.shape_names)} in {names_path}")
 
