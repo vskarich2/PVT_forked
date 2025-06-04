@@ -31,7 +31,13 @@ class Trainer():
         self.device = torch.device(self.args.device)
         self.model = self.load_model(self.device)
         self.opt = self.set_optimizer(self.model)
-        self.scheduler = CosineAnnealingLR(self.opt, self.args.epochs, eta_min=self.args.lr)
+
+        self.scheduler = CosineAnnealingLR(
+            self.opt,
+            self.args.epochs,
+            eta_min=self.args.lr
+        )
+
         self.criterion = cal_loss
         self.checkpoint_folder = self.create_checkpoint_folder_name()
 
@@ -45,6 +51,13 @@ class Trainer():
 
         if self.args.wandb:
             self.start_wandb()
+    def choose_scheduler(self):
+        sched = CosineAnnealingLR(
+            self.opt,
+            self.args.epochs,
+            eta_min=self.args.lr
+        )
+        return sched
 
     def start_wandb(self):
         wandb.init(

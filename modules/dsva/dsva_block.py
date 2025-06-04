@@ -121,7 +121,7 @@ class DSVABlock(nn.Module):
         self.args = args
         self.out_channels = out_channels
         self.resolution = resolution
-        self.heads = 4 # Fixed number of attention heads for this block
+        self.heads = 4 if resolution == 30 else 8
         self.dim_head = self.out_channels // self.heads # Dimension per head
 
         knn_size = args.knn_size_fine if resolution == 30 else args.knn_size_coarse
