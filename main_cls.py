@@ -79,7 +79,9 @@ def generate_saliency(args):
     # 1) Force CPU, dev subset
     device = 'cpu'
     args.device = 'cpu'
+    #args.dev_scan_subset = True   # use the tiny “dev” split (10 examples)
     args.dev_scan_subset = True   # use the tiny “dev” split (10 examples)
+
 
     # 2) Instantiate DSVA branch on CPU
     dsva_args = SimpleNamespace(**vars(args))
