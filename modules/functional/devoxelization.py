@@ -22,24 +22,21 @@ class TrilinearDevoxelization(Function):
         coords = coords.contiguous()
 
         try:
-            # Attempt CUDA backend
+            # Attempt CUDA backend call
             outs, inds, wgts = _backend.trilinear_devoxelize_forward(
                 resolution, is_training, coords, features
             )
         except RuntimeError:
-            # Fallback in case backend does not return inds, wgts
-            # Compute only outs
+            # If CUDA backend fails, compute only outs and create dummy inds and wgts
             outs = _backend.trilinear_devoxelize_forward(
                 resolution, is_training, coords, features
             )[0]
             device = features.device
-            _, _, N = features.size(0), features.size(1), coords.shape[-1]
-            # Create dummy indices and weights
+            N = coords.shape[-1]
             inds = torch.zeros((B, N), dtype=torch.long, device=device)
             wgts = torch.ones((B, C, N), dtype=features.dtype, device=device)
 
         if is_training:
-            # Always save indices and weights for backward
             ctx.save_for_backward(inds, wgts)
             ctx.r = resolution
         return outs
@@ -56,9 +53,9 @@ class TrilinearDevoxelization(Function):
         if len(saved) == 2:
             inds, wgts = saved
         else:
-            # Create dummy tensors if none were saved
+            # Create dummy tensors based on grad_output’s shape
+            B, C, N = grad_output.shape
             device = grad_output.device
-            B, C, N = grad_output.shape[0], grad_output.shape[1], grad_output.shape[2]
             inds = torch.zeros((B, N), dtype=torch.long, device=device)
             wgts = torch.ones((B, C, N), dtype=grad_output.dtype, device=device)
 
