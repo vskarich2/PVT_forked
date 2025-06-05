@@ -5,43 +5,6 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix
 import itertools
 
-def compute_confusion_matrix(model, dataloader, device, num_classes):
-    """
-    Run inference on the given dataloader and compute the confusion matrix.
-
-    Args:
-        model (torch.nn.Module): trained classification model.
-        dataloader (torch.utils.data.DataLoader): DataLoader for ModelNet40 test set.
-        device (torch.device): torch device (e.g., torch.device('cuda')).
-        num_classes (int): number of classes (40 for ModelNet40).
-    Returns:
-        cm (np.ndarray): confusion matrix shape (num_classes, num_classes),
-                         where cm[i, j] = count of true label i predicted as j.
-    """
-    model.eval()
-    all_preds = []
-    all_labels = []
-
-    with torch.no_grad():
-        for points, labels in dataloader:
-            # points: [B, N, 3] or however your dataset returns them
-            # labels: [B]
-            points = points.to(device)           # e.g., [B, 1024, 3]
-            labels = labels.to(device)           # [B]
-
-            # Forward pass
-            logits = model(points)               # assume output shape [B, num_classes]
-            preds = logits.argmax(dim=1)         # [B]
-
-            all_preds.append(preds.cpu().numpy())
-            all_labels.append(labels.cpu().numpy())
-
-    all_preds = np.concatenate(all_preds, axis=0)   # shape [num_samples]
-    all_labels = np.concatenate(all_labels, axis=0) # shape [num_samples]
-
-    cm = confusion_matrix(all_labels, all_preds, labels=list(range(num_classes)))
-    return cm
-
 def plot_confusion_matrix(cm, class_names, normalize=True, figsize=(10, 8), cmap=plt.cm.Blues):
     """
     Plot and display the confusion matrix.

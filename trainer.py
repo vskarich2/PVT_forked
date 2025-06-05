@@ -1,9 +1,12 @@
 from __future__ import print_function
 import warnings
+
+from matplotlib import pyplot as plt
 # ignore everything
 from tqdm.auto import tqdm, trange
 import torch
 
+from PVT_forked.modules.dsva.confusion_matrix import plot_confusion_matrix
 from PVT_forked.modules.dsva.dsva_cross_attention import SparseDynamicVoxelAttention
 
 torch.backends.cudnn.benchmark = True
@@ -11,6 +14,7 @@ torch.backends.cudnn.benchmark = True
 warnings.filterwarnings("ignore")
 import os
 import argparse
+from sklearn.metrics import confusion_matrix
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from data import ModelNetDataset, ScanObjectNNDataset, ScanObjectNNDatasetModified
@@ -53,6 +57,43 @@ class Trainer():
 
         if self.args.wandb:
             self.start_wandb()
+
+    def compute_confusion_matrix(model, dataloader, device, num_classes):
+        """
+        Run inference on the given dataloader and compute the confusion matrix.
+
+        Args:
+            model (torch.nn.Module): trained classification model.
+            dataloader (torch.utils.data.DataLoader): DataLoader for ModelNet40 test set.
+            device (torch.device): torch device (e.g., torch.device('cuda')).
+            num_classes (int): number of classes (40 for ModelNet40).
+        Returns:
+            cm (np.ndarray): confusion matrix shape (num_classes, num_classes),
+                             where cm[i, j] = count of true label i predicted as j.
+        """
+        model.eval()
+        all_preds = []
+        all_labels = []
+
+        with torch.no_grad():
+            for points, labels in dataloader:
+                # points: [B, N, 3] or however your dataset returns them
+                # labels: [B]
+                points = points.to(device)  # e.g., [B, 1024, 3]
+                labels = labels.to(device)  # [B]
+
+                # Forward pass
+                logits = model(points)  # assume output shape [B, num_classes]
+                preds = logits.argmax(dim=1)  # [B]
+
+                all_preds.append(preds.cpu().numpy())
+                all_labels.append(labels.cpu().numpy())
+
+        all_preds = np.concatenate(all_preds, axis=0)  # shape [num_samples]
+        all_labels = np.concatenate(all_labels, axis=0)  # shape [num_samples]
+
+        cm = confusion_matrix(all_labels, all_preds, labels=list(range(num_classes)))
+        return cm
 
     def start_wandb(self):
         wandb.init(
@@ -108,7 +149,6 @@ class Trainer():
                     "train/LearningRate": self.scheduler.get_lr()[0],
                     "epoch": epoch
                 })
-
     def test(self):
 
         print("Testing Run Starting....")
@@ -144,6 +184,65 @@ class Trainer():
                 outstr = 'Test :: test acc: %.6f, test avg acc: %.6f' % (test_acc, avg_per_class_acc)
                 print(outstr)
 
+    def make_confustion_matrix_for_scanobject(self):
+
+        print("Generating Confusion Matrix....")
+
+        test_loader = self.get_test_loader()
+
+        self.model.eval()
+
+        all_preds = []
+        all_labels = []
+        test_true = []
+        test_pred = []
+        class_names = [
+                        "bag",
+                        "bin",
+                        "box",
+                        "cabinet",
+                        "chair",
+                        "desk",
+                        "display",
+                        "door",
+                        "shelf",
+                        "table",
+                        "bed",
+                        "pillow",
+                        "sink",
+                        "sofa",
+                        "toilet"
+                    ]
+
+        with tqdm(test_loader, unit="batch") as logging_wrapper:
+            logging_wrapper.set_description(f"TESTING {len(test_loader)} Batches...")
+
+            with torch.no_grad():
+                for data, label, classname in logging_wrapper:
+                    (feats, coords), label = self.preprocess_test_data(data, label)
+
+                    logits = self.model(feats)
+                    preds = logits.max(dim=1)[1]
+
+                    test_true.append(label.cpu().numpy())
+                    test_pred.append(preds.detach().cpu().numpy())
+                    all_preds.append(preds.cpu().numpy())
+                    all_labels.append(label.cpu().numpy())
+
+                test_true = np.concatenate(test_true)
+                test_pred = np.concatenate(test_pred)
+                all_preds = np.concatenate(all_preds, axis=0)  # shape [num_samples]
+                all_labels = np.concatenate(all_labels, axis=0)  # shape [num_samples]
+
+                test_acc = metrics.accuracy_score(test_true, test_pred)
+                avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
+                outstr = 'Test :: test acc: %.6f, test avg acc: %.6f' % (test_acc, avg_per_class_acc)
+                print(outstr)
+
+                cm = confusion_matrix(all_labels, all_preds, labels=list(range(15)))
+                plot_confusion_matrix(cm, class_names)
+                plt.savefig("modelnet40_confusion_matrix.png", dpi=300)
+                plt.show()
 
     def test_one_epoch(
             self,
