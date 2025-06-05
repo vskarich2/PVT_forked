@@ -12,35 +12,27 @@ class TrilinearDevoxelization(Function):
     def forward(ctx, features, coords, resolution, is_training=True):
         """
         :param ctx:
-        :param coords: the coordinates of points, FloatTensor[B, 3, N]
-        :param features: FloatTensor[B, C, R, R, R]
-        :param resolution: int, the voxel resolution
+        :param coords:     FloatTensor[B, 3, N]  (point coordinates)
+        :param features:   FloatTensor[B, C, R, R, R]  (voxel grid)
+        :param resolution: int, the voxel resolution R
         :param is_training: bool, training mode
         :return:
-            FloatTensor[B, C, N]
+            FloatTensor[B, C, N]   (point‐wise features after trilinear interpolation)
         """
         B, C = features.shape[:2]
-        # Flatten features to (B, C, R³)
-        features_flat = features.contiguous().view(B, C, -1)
-        coords_contig = coords.contiguous()
 
-        try:
-            # Try the CUDA backend (this returns outs, inds, wgts)
-            outs, inds, wgts = _backend.trilinear_devoxelize_forward(
-                resolution, is_training, coords_contig, features_flat
-            )
-        except RuntimeError:
-            # If the CUDA kernel failed (e.g. on CPU), still compute outs,
-            # then create dummy inds/wgts so backward() never crashes.
-            outs = _backend.trilinear_devoxelize_forward(
-                resolution, is_training, coords_contig, features_flat
-            )[0]
-            device = features.device
-            N = coords_contig.shape[-1]
-            inds = torch.zeros((B, N), dtype=torch.long, device=device)
-            wgts = torch.ones((B, C, N), dtype=features.dtype, device=device)
+        # We pass the voxel grid as‐is (shape: B × C × R × R × R).
+        # The backend implementation will return (outs, inds, wgts).
+        outs, inds, wgts = _backend.trilinear_devoxelize_forward(
+            resolution,       # int
+            is_training,      # bool
+            coords.contiguous(),   # (B, 3, N)
+            features.contiguous()   # (B, C, R, R, R)
+        )
 
-        # Always save exactly two tensors for backward()
+        # Always save these two tensors for backward:
+        #  - inds: flat‐index per point (B, N)
+        #  - wgts: interpolation weights (B, C, N)
         ctx.save_for_backward(inds, wgts)
         ctx.r = resolution
         return outs
@@ -49,26 +41,28 @@ class TrilinearDevoxelization(Function):
     def backward(ctx, grad_output):
         """
         :param ctx:
-        :param grad_output: gradient of outputs, FloatTensor[B, C, N]
+        :param grad_output: FloatTensor[B, C, N]
         :return:
-            gradient of inputs, FloatTensor[B, C, R, R, R]
+            grad_features: FloatTensor[B, C, R, R, R]  (gradient w.r.t. the voxel grid)
+            None, None, None  (no gradients for coords, resolution, is_training)
         """
-        saved = ctx.saved_tensors
-        if len(saved) == 2:
-            inds, wgts = saved
-        else:
-            # If somehow nothing was saved, fabricate the right shapes.
-            B, C, N = grad_output.shape
-            device = grad_output.device
-            inds = torch.zeros((B, N), dtype=torch.long, device=device)
-            wgts = torch.ones((B, C, N), dtype=grad_output.dtype, device=device)
+        # Unpack the two saved tensors:
+        inds, wgts = ctx.saved_tensors  # both exist now, guaranteed
 
+        # Call the backend backward function:
         grad_inputs = _backend.trilinear_devoxelize_backward(
-            grad_output.contiguous(), inds, wgts, ctx.r
+            grad_output.contiguous(),  # (B, C, N)
+            inds,                      # (B, N)
+            wgts,                      # (B, C, N)
+            ctx.r                      # resolution R
         )
-        # Reshape back to (B, C, R, R, R)
+        # grad_inputs comes back as (B, C, R^3).  Reshape to (B, C, R, R, R):
         return grad_inputs.view(
-            grad_output.size(0), grad_output.size(1), ctx.r, ctx.r, ctx.r
+            grad_output.size(0),    # B
+            grad_output.size(1),    # C
+            ctx.r,                  # R
+            ctx.r,                  # R
+            ctx.r                   # R
         ), None, None, None
 
 
