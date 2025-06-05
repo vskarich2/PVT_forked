@@ -6,7 +6,7 @@ import warnings
 import torch
 
 from dynamic_config import ConfigWatcher
-from trainer import Trainer
+from cs231n.training.trainer import Trainer
 
 # This enables verbose mode for error messages in torch.
 # TURN OFF IN PROD, SLOWS EVERYTHING DOWN
@@ -116,16 +116,23 @@ if __name__ == "__main__":
 
     parser.add_argument('--knn_size_fine', type=int, default=10,
                         help='Number of total neighbors to use in KNN.')
+
     parser.add_argument('--top_k_select_fine', type=int, default=4,
                         help='Number of top neighbors to use in sparse attention.')
 
+
     parser.add_argument('--knn_size_coarse', type=int, default=10,
                         help='Number of total neighbors to use in KNN.')
+
     parser.add_argument('--top_k_select_coarse', type=int, default=4,
                         help='Number of top neighbors to use in sparse attention.')
+
     parser.add_argument('--no_point_attention', action='store_true', help='Use window attention')
+
     parser.add_argument('--eight_heads', action='store_true', help='8 heads for coarse attention')
+
     parser.add_argument('--large_attn', action='store_true', help='Use window attention')
+
     parser.add_argument('--scanobject_compare', action='store_true', help='Use window attention')
 
     parser.add_argument('--saliency', action='store_true', help='Generate saliency map')
@@ -159,8 +166,8 @@ if __name__ == "__main__":
     if not args.eval:
         trainer.fit()
     elif args.scanobject_compare:
-        #trainer.make_confustion_matrix_for_scanobject()
-        trainer.test_compare_with_hooks()
+        trainer.make_confustion_matrix_for_scanobject()
+        #trainer.test_compare_with_hooks()
     else:
         trainer.test()
 

@@ -9,7 +9,7 @@ BASE_DIR = None
 if sys.platform == 'win32':
     BASE_DIR = r"C:\Users\mberm\PVT_forked"
 elif sys.platform == 'darwin':
-    BASE_DIR = "/Users/vskarich/cs231n_final_project/PVT_forked_repo/PVT_forked"
+    BASE_DIR = "/"
 else:
     BASE_DIR = "/content/PVT_forked"
 

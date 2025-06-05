@@ -949,10 +949,6 @@ class Trainer():
         print("[test_compare_with_hooks] → Exiting method, returning all_results")
         return all_results
 
-import torch
-import numpy as np
-import matplotlib.pyplot as plt
-
 # ------------------------------------------------------------
 # Example “item” dictionary (you already have this in your code):
 #    - coords0, feat0, grad0  : stage 0 voxel coords, features, and gradients
@@ -1051,7 +1047,6 @@ def plot_three_stage_saliency(item):
 
     plt.tight_layout(rect=[0, 0, 0.9, 1.0])
     plt.show()
-
 
 # ------------------------------------------------------------------
 # Example usage:
