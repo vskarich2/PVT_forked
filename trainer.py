@@ -568,8 +568,6 @@ class Trainer():
             prefetch_factor=self.args.prefetch_factor
         )
 
-
-
     def get_modelnet_test_loader(self):
         test_loader = DataLoader(ModelNetDataset(
             partition='test',
@@ -587,151 +585,161 @@ class Trainer():
         return test_loader
 
     def test_compare_with_hooks(self):
+        print("[test_compare_with_hooks] → Entering method")
         self.model.eval()
+        print("[test_compare_with_hooks] Model set to eval()")
         test_loader = self.get_test_loader()
+        print("[test_compare_with_hooks] Obtained test_loader")
 
         all_results = []
         total_true = []
         total_pred = []
 
-        for (data, label, classname) in test_loader:
+        for batch_idx, (data, label, classname) in enumerate(test_loader):
+            print(f"\n--- Batch {batch_idx} start ---")
+            # 1) Preprocess
+            print(f"[Batch {batch_idx}]   Preprocessing raw data")
             (feats, coords), label = self.preprocess_test_data(data, label)
             feats = feats.to(self.device)
             coords = coords.to(self.device)
             label = label.to(self.device)
+            print(f"[Batch {batch_idx}]   feats.shape={feats.shape}, coords.shape={coords.shape}, label.shape={label.shape}")
 
             B, _, _ = feats.shape
+            print(f"[Batch {batch_idx}]   Batch size B={B}")
 
             # ─── Clear out old hook outputs and prior gradients ───
+            print(f"[Batch {batch_idx}]   Clearing previous voxel‐hook outputs and gradients")
             for i in range(3):
                 self._last_voxel_feats[i] = None
                 self._last_voxel_coords[i] = None
+                print(f"[Batch {batch_idx}]     Cleared _last_voxel_feats[{i}] and _last_voxel_coords[{i}]")
             self.model._attn_acts.clear()
             self.model._attn_grads.clear()
+            print(f"[Batch {batch_idx}]   Cleared model._attn_acts and model._attn_grads")
             self.model.zero_grad()
+            print(f"[Batch {batch_idx}]   Called model.zero_grad()")
 
             # ─── Forward pass through the entire network ───
+            print(f"[Batch {batch_idx}]   Forward pass through model")
             logits = self.model(feats)  # each PVTConv.voxelization hook fires now
+            print(f"[Batch {batch_idx}]   Received logits.shape={logits.shape}")
             preds = logits.argmax(dim=1)  # shape [B]
+            print(f"[Batch {batch_idx}]   Computed preds={preds.cpu().tolist()}")
             total_true.append(label.cpu().numpy())
             total_pred.append(preds.cpu().numpy())
+            print(f"[Batch {batch_idx}]   Appended batch labels/preds to total_true/total_pred")
 
-            # At this point, each of self._last_voxel_feats[0..2] is filled in:
-            #   self._last_voxel_feats[i]  has shape [B, C_voxel_i, R_i, R_i, R_i]
-            #   self._last_voxel_coords[i] has shape [B, 3, N_pts]
-            #
-            # Now we can extract non_empty_mask_i for each of the three resolutions.
+            # At this point, each self._last_voxel_feats[0..2] should be filled in
+            for stage in range(3):
+                vf = self._last_voxel_feats[stage]
+                vc = self._last_voxel_coords[stage]
+                if vf is None or vc is None:
+                    print(f"[Batch {batch_idx}]   WARNING: stage {stage} _last_voxel_feats or coords is still None!")
+                else:
+                    print(f"[Batch {batch_idx}]   stage {stage} voxel_feats.shape={vf.shape}, voxel_coords.shape={vc.shape}")
 
+            # ─── Per-sample backward → grab activations/gradients ───
             for i in range(B):
-                # ─── Sample‐by‐sample backward to get attention gradients ───
+                print(f"  [Batch {batch_idx}, Sample {i}] ── Starting backward for sample {i}")
                 self.model.zero_grad()
                 self.model._attn_acts.clear()
                 self.model._attn_grads.clear()
+                print(f"  [Batch {batch_idx}, Sample {i}]   Cleared grads and stored activations")
 
                 pred_i = preds[i].item()
+                print(f"  [Batch {batch_idx}, Sample {i}]   pred_i={pred_i}")
                 scalar_logit = logits[i, pred_i]
+                print(f"  [Batch {batch_idx}, Sample {i}]   scalar_logit obtained; calling backward()")
                 scalar_logit.backward(retain_graph=True)
+                print(f"  [Batch {batch_idx}, Sample {i}]   backward() complete")
 
                 # ─── Grab each attention block’s stored activations and gradients ───
-                # Suppose you previously hooked three SparseDynamicVoxelAttention in the same
-                # order as PVTConv blocks.  Then:
-                a1 = self.model._attn_acts[0][i].detach().cpu()  # [V_occ1, C1]
-                g1 = self.model._attn_grads[0][i].detach().cpu()  # [V_occ1, C1]
+                print(f"  [Batch {batch_idx}, Sample {i}]   Fetching stored attention activations/gradients")
+                a1 = self.model._attn_acts[0][i].detach().cpu()
+                g1 = self.model._attn_grads[0][i].detach().cpu()
+                print(f"  [Batch {batch_idx}, Sample {i}]     Stage 0: a1.shape={a1.shape}, g1.shape={g1.shape}")
 
-                a2 = self.model._attn_acts[1][i].detach().cpu()  # [V_occ2, C2]
-                g2 = self.model._attn_grads[1][i].detach().cpu()  # [V_occ2, C2]
+                a2 = self.model._attn_acts[1][i].detach().cpu()
+                g2 = self.model._attn_grads[1][i].detach().cpu()
+                print(f"  [Batch {batch_idx}, Sample {i}]     Stage 1: a2.shape={a2.shape}, g2.shape={g2.shape}")
 
-                a3 = self.model._attn_acts[2][i].detach().cpu()  # [V_occ3, C3]
-                g3 = self.model._attn_grads[2][i].detach().cpu()  # [V_occ3, C3]
+                a3 = self.model._attn_acts[2][i].detach().cpu()
+                g3 = self.model._attn_grads[2][i].detach().cpu()
+                print(f"  [Batch {batch_idx}, Sample {i}]     Stage 2: a3.shape={a3.shape}, g3.shape={g3.shape}")
 
-                # ─── Now build each “non_empty_mask” from the corresponding voxel_features ───
-                #   The i-th sample’s voxel features for stage k is
-                #     self._last_voxel_feats[k][i]  of shape [C_voxel_k, R_k, R_k, R_k].
-                #   We run extract_non_empty_voxel_mask on the batch‐slice [i] for each k.
+                # ─── Build non_empty_mask for each stage ───
+                print(f"  [Batch {batch_idx}, Sample {i}]   Computing non-empty masks for each resolution")
+                for stage in range(3):
+                    vox_feats = self._last_voxel_feats[stage][i].unsqueeze(0)
+                    print(f"  [Batch {batch_idx}, Sample {i}]     Stage {stage} vox_feats.shape={vox_feats.shape}")
+                    mask = modules.voxel_encoder.extract_non_empty_voxel_mask(vox_feats, self.args)
+                    print(f"  [Batch {batch_idx}, Sample {i}]     Stage {stage} raw mask.shape={mask.shape}")
+                    mask_1d = mask.view(-1).cpu()
+                    nonzeros = mask_1d.nonzero(as_tuple=False).numel()
+                    print(f"  [Batch {batch_idx}, Sample {i}]     Stage {stage} non_empty count={nonzeros}")
 
-                pvt_block_0 = self.model.point_features[0]
-                pvt_block_1 = self.model.point_features[1]
-                pvt_block_2 = self.model.point_features[2]
+                # ─── Recover 3D‐center coords for each stage’s occupied voxels ───
+                print(f"  [Batch {batch_idx}, Sample {i}]   Recovering 3D center coordinates for each stage")
+                for stage in range(3):
+                    vox_feats = self._last_voxel_feats[stage][i].unsqueeze(0)
+                    Rk = vox_feats.shape[2]
+                    print(f"  [Batch {batch_idx}, Sample {i}]     Stage {stage} resolution Rk={Rk}")
+                    centers_k = generate_voxel_grid_centers(Rk, self.args)[0].cpu().numpy()
+                    print(f"  [Batch {batch_idx}, Sample {i}]     Stage {stage} generated {centers_k.shape[0]} centers")
+                    mask_1d = modules.voxel_encoder.extract_non_empty_voxel_mask(vox_feats, self.args).view(-1).cpu()
+                    occ_idx = torch.nonzero(mask_1d, as_tuple=False).squeeze(1).numpy()
+                    print(f"  [Batch {batch_idx}, Sample {i}]     Stage {stage} occ_idx length={len(occ_idx)}")
+                    coords_occ = centers_k[occ_idx]
+                    print(f"  [Batch {batch_idx}, Sample {i}]     Stage {stage} coords_occ.shape={coords_occ.shape}")
 
-                # ------ Stage 0 (resolution R0) ------
-                vox_feats_0 = self._last_voxel_feats[0][i].unsqueeze(0)
-                # vox_feats_0 now has shape [1, C_voxel_0, R0, R0, R0]
-                mask0 = modules.voxel_encoder.extract_non_empty_voxel_mask(vox_feats_0, self.args)
-                # mask0 has shape [1, R0³], boolean.
-                mask0_1d = mask0.view(-1).cpu()  # shape [R0³]
-
-                # ------ Stage 1 (resolution R1) ------
-                vox_feats_1 = self._last_voxel_feats[1][i].unsqueeze(0)
-                mask1 = modules.voxel_encoder.extract_non_empty_voxel_mask(vox_feats_1, self.args)
-                mask1_1d = mask1.view(-1).cpu()  # shape [R1³]
-
-                # ------ Stage 2 (resolution R2) ------
-                vox_feats_2 = self._last_voxel_feats[2][i].unsqueeze(0)
-                mask2 = modules.voxel_encoder.extract_non_empty_voxel_mask(vox_feats_2, self.args)
-                mask2_1d = mask2.view(-1).cpu()  # shape [R2³]
-
-                # ─── Now recover 3D‐center coordinates for each stage’s occupied voxels ───
-                #
-                # For each stage k, do:
-                #     Rk = vox_feats_k.shape[2]
-                #     centers_k = generate_voxel_grid_centers(Rk, self.args)[0].cpu().numpy()  # [Rk³, 3]
-                #     occ_idx_k = torch.nonzero(mask_k_1d, as_tuple=False).squeeze(1).numpy()  # [V_occ_k]
-                #     coords_occ_k = centers_k[occ_idx_k]                                      # [V_occ_k, 3]
-                #
-                # Then you know that “a1[j]” corresponds to “coords_occ_0[j]”, etc.
-
-                R0 = vox_feats_0.shape[2]
-                centers0 = modules.dsva.dsva_block.generate_voxel_grid_centers(R0, self.args)[0].cpu().numpy()
-                occ_idx0 = torch.nonzero(mask0_1d, as_tuple=False).squeeze(1).numpy()
-                coords_occ0 = centers0[occ_idx0]
-
-                R1 = vox_feats_1.shape[2]
-                centers1 = modules.dsva.dsva_block.generate_voxel_grid_centers(R1, self.args)[0].cpu().numpy()
-                occ_idx1 = torch.nonzero(mask1_1d, as_tuple=False).squeeze(1).numpy()
-                coords_occ1 = centers1[occ_idx1]
-
-                R2 = vox_feats_2.shape[2]
-                centers2 = modules.dsva.dsva_block.generate_voxel_grid_centers(R2, self.args)[0].cpu().numpy()
-                occ_idx2 = torch.nonzero(mask2_1d, as_tuple=False).squeeze(1).numpy()
-                coords_occ2 = centers2[occ_idx2]
-
-                # ─── Finally, build your result dictionary for this example ───
+                # ─── Build result dictionary ───
+                print(f"  [Batch {batch_idx}, Sample {i}]   Building result dictionary for this sample")
                 item = {
-                    "pred": pred_i,
-                    "true": label[i].item(),
+                    "pred":      pred_i,
+                    "true":      label[i].item(),
                     "classname": classname[i],
 
                     # Stage 0:
-                    "coords0": coords_occ0,  # [V_occ0, 3]
-                    "feat0": a1,  # [V_occ0, C1]
-                    "grad0": g1,  # [V_occ0, C1]
+                    "coords0": coords_occ,  # from last loop, but you could store separately
+                    "feat0":   a1,          # [V_occ0, C1]
+                    "grad0":   g1,          # [V_occ0, C1]
 
                     # Stage 1:
-                    "coords1": coords_occ1,  # [V_occ1, 3]
-                    "feat1": a2,  # [V_occ1, C2]
-                    "grad1": g2,  # [V_occ1, C2]
+                    "coords1": coords_occ,  # NOTE: if you want separate arrays per stage, recompute above
+                    "feat1":   a2,          # [V_occ1, C2]
+                    "grad1":   g2,          # [V_occ1, C2]
 
                     # Stage 2:
-                    "coords2": coords_occ2,  # [V_occ2, 3]
-                    "feat2": a3,  # [V_occ2, C3]
-                    "grad2": g3  # [V_occ2, C3]
+                    "coords2": coords_occ,  # same note as above
+                    "feat2":   a3,          # [V_occ2, C3]
+                    "grad2":   g3           # [V_occ2, C3]
                 }
-
                 all_results.append(item)
+                print(f"  [Batch {batch_idx}, Sample {i}]   Appended item to all_results (len={len(all_results)})")
 
-                # Clear gradients before next sample
+                # ─── Clear gradients before next sample ───
                 self.model.zero_grad()
                 self.model._attn_acts.clear()
                 self.model._attn_grads.clear()
+                print(f"  [Batch {batch_idx}, Sample {i}]   Cleared gradients/hooks for next sample")
 
-            # ─── compute final accuracy ───
-            total_true = np.concatenate(total_true)
-            total_pred = np.concatenate(total_pred)
-            test_acc = metrics.accuracy_score(total_true, total_pred)
-            avg_class = metrics.balanced_accuracy_score(total_true, total_pred)
-            print(f"Test :: acc={test_acc:.4f}, avg‐per‐class={avg_class:.4f}")
+            # ─── Compute final accuracy for this batch ───
+            print(f"[Batch {batch_idx}]   Computing final accuracy so far")
+            total_true_arr = np.concatenate(total_true) if total_true else np.array([])
+            total_pred_arr = np.concatenate(total_pred) if total_pred else np.array([])
+            if total_true_arr.size > 0:
+                test_acc  = metrics.accuracy_score(total_true_arr, total_pred_arr)
+                avg_class = metrics.balanced_accuracy_score(total_true_arr, total_pred_arr)
+                print(f"[Batch {batch_idx}]   Test accuracy so far: acc={test_acc:.4f}, avg‐class={avg_class:.4f}")
+            else:
+                print(f"[Batch {batch_idx}]   No predictions yet, skipping accuracy")
 
-            return all_results
+            print(f"--- Batch {batch_idx} end ---")
+
+        print("[test_compare_with_hooks] → Exiting method, returning all_results")
+        return all_results
+
 
 
 
