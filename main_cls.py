@@ -157,7 +157,7 @@ if __name__ == "__main__":
     if not args.eval:
         trainer.fit()
     elif args.scanobject_compare:
-        trainer.test_compare()
+        trainer.test_compare_with_hooks()
     else:
         trainer.test()
 

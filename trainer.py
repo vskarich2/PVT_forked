@@ -3,6 +3,9 @@ import warnings
 # ignore everything
 from tqdm.auto import tqdm, trange
 import torch
+
+from PVT_forked.modules.dsva.dsva_cross_attention import SparseDynamicVoxelAttention
+
 torch.backends.cudnn.benchmark = True
 
 warnings.filterwarnings("ignore")
@@ -30,6 +33,11 @@ class Trainer():
         self.io = io
         self.device = torch.device(self.args.device)
         self.model = self.load_model(self.device)
+
+        if self.args.scanobject_compare:
+            self.register_saliency_hooks()
+            self.register_voxelization_hooks()
+
         self.opt = self.set_optimizer(self.model)
         self.scheduler = CosineAnnealingLR(self.opt, self.args.epochs, eta_min=self.args.lr)
         self.criterion = cal_loss
@@ -389,6 +397,57 @@ class Trainer():
 
         return test_acc
 
+    def register_voxelization_hooks(self):
+        # (A) Prepare three “empty” slots to hold each PVTConv’s voxel outputs:
+        #     Each entry will be a tuple (avg_voxel_features, voxel_coords).
+        #     We index them [0], [1], [2] to match the three PVTConv blocks.
+        self._last_voxel_feats = [None, None, None]  # each will be shape [B, C_voxel, R, R, R]
+        self._last_voxel_coords = [None, None, None]  # each will be shape [B, N_pts, 3]
+
+        # (B) Define a small factory that creates a hook function bound to index i:
+        def make_voxel_hook(i):
+            def _voxel_hook(module, inp, out):
+                """
+                This hook is invoked right after the i-th PVTConv’s Voxelization.forward(...)
+                ‘out’ is (avg_voxel_features, norm_coords). We only need index 0 of that tuple.
+                """
+                self._last_voxel_feats[i] = out[0]  # store [B, C_voxel, R, R, R]
+                self._last_voxel_coords[i] = out[1]  # store [B, 3, N_pts]
+
+            return _voxel_hook
+
+        # (C) Attach one hook to each PVTConv.voxelization.  We loop over i = 0..2:
+        for i in range(3):
+            pvt_block = self.model.point_features[i]
+            # pvt_block.voxelization is a Voxelization module
+            pvt_block.voxelization.register_forward_hook(make_voxel_hook(i))
+
+    def register_saliency_hooks(self):
+        # (B) Prepare lists (or any containers) to store activations & gradients:
+        self.model._attn_acts = []  # will collect forward outputs from each SparseDynamicVoxelAttention
+        self.model._attn_grads = []  # will collect backward grads from each SparseDynamicVoxelAttention
+
+        def _voxel_hook(module, inp, out):
+            self._last_voxel_feats = out[0]
+            self._last_voxel_coords = out[1]
+
+        self.model.voxelization.register_forward_hook(_voxel_hook)
+        # (C) Define hook functions:
+        def _forward_hook(module, inp, out):
+            # `module` is the SparseDynamicVoxelAttention instance;
+            # `out` is its forward result (a list of length B, each of shape [Vʼ, D]).
+            self.model._attn_acts.append(out.detach().cpu())
+
+        def _backward_hook(module, grad_in, grad_out):
+            # `grad_out[0]` is the gradient of the loss w.r.t. that module’s output.
+            self.model._attn_grads.append(grad_out[0].detach().cpu())
+
+        # (D) Walk through the model, find every SparseDynamicVoxelAttention, and register:
+        for name, submod in self.model.named_modules():
+            if isinstance(submod, SparseDynamicVoxelAttention):
+                submod.register_forward_hook(_forward_hook)
+                submod.register_full_backward_hook(_backward_hook)
+
     def load_model(self, device):
         # Try to load models
         if self.args.model == 'pvt':
@@ -423,54 +482,6 @@ class Trainer():
                 weight_decay=self.args.weight_decay
             )
         return opt
-
-    def test_one_epoch_compare(self, epoch, test_loader, train_avg_loss, best_test_acc):
-        test_loss = 0.0
-        count = 0.0
-        test_pred = []
-        test_true = []
-        self.model.eval()
-
-        test_bar = tqdm(
-            test_loader,
-            desc=f"Testing  (Epoch {epoch + 1}/{self.args.epochs})",
-            leave=False,
-            unit="batch"
-        )
-        with torch.no_grad():
-            for data, label in test_bar:
-                (feats, coords), label = self.preprocess_test_data(data, label)
-
-                # ==== AMP CHANGE #4: wrap inference in autocast (optional)
-                if self.device.type == 'cuda' and self.args.amp:
-                    with autocast():
-                        logits = self.model(feats)
-                else:
-                    logits = self.model(feats)
-                # ==== END AMP CHANGE
-
-                loss = self.criterion(logits, label)
-                test_loss += loss.item()
-
-                preds = logits.max(dim=1)[1]
-                count += 1.0
-                test_true.append(label.cpu().numpy())
-                test_pred.append(preds.detach().cpu().numpy())
-
-                running_avg_loss = test_loss / count
-                test_bar.set_postfix(test_loss=running_avg_loss)
-
-        test_bar.close()
-        test_acc = self.check_stats(
-            count,
-            epoch,
-            test_loss,
-            test_pred,
-            test_true,
-            train_avg_loss,
-            best_test_acc
-        )
-        return test_acc
 
     def get_train_loader(self):
         """
@@ -576,4 +587,153 @@ class Trainer():
             prefetch_factor=self.args.prefetch_factor
         )
         return test_loader
+
+    def test_compare_with_hooks(self):
+        self.model.eval()
+        test_loader = self.get_test_loader()
+
+        all_results = []
+        total_true = []
+        total_pred = []
+
+        for (data, label, classname) in tqdm(test_loader, desc="Testing Batches"):
+            (feats, coords), label = self.preprocess_test_data(data, label)
+            feats = feats.to(self.device)
+            coords = coords.to(self.device)
+            label = label.to(self.device)
+
+            B, _, _ = feats.shape
+
+            # ─── Clear out old hook outputs and prior gradients ───
+            for i in range(3):
+                self._last_voxel_feats[i] = None
+                self._last_voxel_coords[i] = None
+            self.model._attn_acts.clear()
+            self.model._attn_grads.clear()
+            self.model.zero_grad()
+
+            # ─── Forward pass through the entire network ───
+            logits = self.model(feats)  # each PVTConv.voxelization hook fires now
+            preds = logits.argmax(dim=1)  # shape [B]
+            total_true.append(label.cpu().numpy())
+            total_pred.append(preds.cpu().numpy())
+
+            # At this point, each of self._last_voxel_feats[0..2] is filled in:
+            #   self._last_voxel_feats[i]  has shape [B, C_voxel_i, R_i, R_i, R_i]
+            #   self._last_voxel_coords[i] has shape [B, 3, N_pts]
+            #
+            # Now we can extract non_empty_mask_i for each of the three resolutions.
+
+            for i in range(B):
+                # ─── Sample‐by‐sample backward to get attention gradients ───
+                self.model.zero_grad()
+                self.model._attn_acts.clear()
+                self.model._attn_grads.clear()
+
+                pred_i = preds[i].item()
+                scalar_logit = logits[i, pred_i]
+                scalar_logit.backward(retain_graph=True)
+
+                # ─── Grab each attention block’s stored activations and gradients ───
+                # Suppose you previously hooked three SparseDynamicVoxelAttention in the same
+                # order as PVTConv blocks.  Then:
+                a1 = self.model._attn_acts[0][i].detach().cpu()  # [V_occ1, C1]
+                g1 = self.model._attn_grads[0][i].detach().cpu()  # [V_occ1, C1]
+
+                a2 = self.model._attn_acts[1][i].detach().cpu()  # [V_occ2, C2]
+                g2 = self.model._attn_grads[1][i].detach().cpu()  # [V_occ2, C2]
+
+                a3 = self.model._attn_acts[2][i].detach().cpu()  # [V_occ3, C3]
+                g3 = self.model._attn_grads[2][i].detach().cpu()  # [V_occ3, C3]
+
+                # ─── Now build each “non_empty_mask” from the corresponding voxel_features ───
+                #   The i-th sample’s voxel features for stage k is
+                #     self._last_voxel_feats[k][i]  of shape [C_voxel_k, R_k, R_k, R_k].
+                #   We run extract_non_empty_voxel_mask on the batch‐slice [i] for each k.
+
+                pvt_block_0 = self.model.point_features[0]
+                pvt_block_1 = self.model.point_features[1]
+                pvt_block_2 = self.model.point_features[2]
+
+                # ------ Stage 0 (resolution R0) ------
+                vox_feats_0 = self._last_voxel_feats[0][i].unsqueeze(0)
+                # vox_feats_0 now has shape [1, C_voxel_0, R0, R0, R0]
+                mask0 = modules.voxel_encoder.extract_non_empty_voxel_mask(vox_feats_0, self.args)
+                # mask0 has shape [1, R0³], boolean.
+                mask0_1d = mask0.view(-1).cpu()  # shape [R0³]
+
+                # ------ Stage 1 (resolution R1) ------
+                vox_feats_1 = self._last_voxel_feats[1][i].unsqueeze(0)
+                mask1 = modules.voxel_encoder.extract_non_empty_voxel_mask(vox_feats_1, self.args)
+                mask1_1d = mask1.view(-1).cpu()  # shape [R1³]
+
+                # ------ Stage 2 (resolution R2) ------
+                vox_feats_2 = self._last_voxel_feats[2][i].unsqueeze(0)
+                mask2 = modules.voxel_encoder.extract_non_empty_voxel_mask(vox_feats_2, self.args)
+                mask2_1d = mask2.view(-1).cpu()  # shape [R2³]
+
+                # ─── Now recover 3D‐center coordinates for each stage’s occupied voxels ───
+                #
+                # For each stage k, do:
+                #     Rk = vox_feats_k.shape[2]
+                #     centers_k = generate_voxel_grid_centers(Rk, self.args)[0].cpu().numpy()  # [Rk³, 3]
+                #     occ_idx_k = torch.nonzero(mask_k_1d, as_tuple=False).squeeze(1).numpy()  # [V_occ_k]
+                #     coords_occ_k = centers_k[occ_idx_k]                                      # [V_occ_k, 3]
+                #
+                # Then you know that “a1[j]” corresponds to “coords_occ_0[j]”, etc.
+
+                R0 = vox_feats_0.shape[2]
+                centers0 = generate_voxel_grid_centers(R0, self.args)[0].cpu().numpy()
+                occ_idx0 = torch.nonzero(mask0_1d, as_tuple=False).squeeze(1).numpy()
+                coords_occ0 = centers0[occ_idx0]
+
+                R1 = vox_feats_1.shape[2]
+                centers1 = generate_voxel_grid_centers(R1, self.args)[0].cpu().numpy()
+                occ_idx1 = torch.nonzero(mask1_1d, as_tuple=False).squeeze(1).numpy()
+                coords_occ1 = centers1[occ_idx1]
+
+                R2 = vox_feats_2.shape[2]
+                centers2 = generate_voxel_grid_centers(R2, self.args)[0].cpu().numpy()
+                occ_idx2 = torch.nonzero(mask2_1d, as_tuple=False).squeeze(1).numpy()
+                coords_occ2 = centers2[occ_idx2]
+
+                # ─── Finally, build your result dictionary for this example ───
+                item = {
+                    "pred": pred_i,
+                    "true": label[i].item(),
+                    "classname": classname[i],
+
+                    # Stage 0:
+                    "coords0": coords_occ0,  # [V_occ0, 3]
+                    "feat0": a1,  # [V_occ0, C1]
+                    "grad0": g1,  # [V_occ0, C1]
+
+                    # Stage 1:
+                    "coords1": coords_occ1,  # [V_occ1, 3]
+                    "feat1": a2,  # [V_occ1, C2]
+                    "grad1": g2,  # [V_occ1, C2]
+
+                    # Stage 2:
+                    "coords2": coords_occ2,  # [V_occ2, 3]
+                    "feat2": a3,  # [V_occ2, C3]
+                    "grad2": g3  # [V_occ2, C3]
+                }
+
+                all_results.append(item)
+
+                # Clear gradients before next sample
+                self.model.zero_grad()
+                self.model._attn_acts.clear()
+                self.model._attn_grads.clear()
+
+            # ─── compute final accuracy ───
+            total_true = np.concatenate(total_true)
+            total_pred = np.concatenate(total_pred)
+            test_acc = metrics.accuracy_score(total_true, total_pred)
+            avg_class = metrics.balanced_accuracy_score(total_true, total_pred)
+            print(f"Test :: acc={test_acc:.4f}, avg‐per‐class={avg_class:.4f}")
+
+            return all_results
+
+
 

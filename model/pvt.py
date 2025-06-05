@@ -27,6 +27,10 @@ class pvt(nn.Module):
         # Input channels: x,y,z + normal_x, normal_y, normal_z
         self.in_channels = 6  # features shape: (B, 6, N)
 
+        # Save gradients and activations for saliency maps
+        self._attn_acts = []
+        self._attn_grads = []
+
         # Create the sequence of PVTConv blocks and compute output channel counts
         layers, channels_point, concat_channels_point = create_pointnet_components(
             args=self.args,

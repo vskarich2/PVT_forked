@@ -112,6 +112,7 @@ class PVTConv(nn.Module):
         #    - voxel_features: (B, C_voxel, R, R, R) - the 3D voxel grid features.
         #    - voxel_coords:   (B, 3, N) - integer voxel indices for each original point.
         #                      These are crucial for the devoxelization step.
+
         voxel_features, voxel_coords = self.voxelization(features, coords)
         # b) Voxel encoder: Apply 3D convolutions and local-window self-attention.
         #    This module processes the dense voxel grid, extracts hierarchical features,
