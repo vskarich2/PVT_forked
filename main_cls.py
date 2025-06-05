@@ -302,5 +302,5 @@ if __name__ == "__main__":
         trainer.test_compare()
     else:
         trainer.test()
-
+ 
     watcher.stop()
