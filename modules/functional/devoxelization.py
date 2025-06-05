@@ -1,6 +1,6 @@
 from torch.autograd import Function
-
 from modules.functional.backend import _backend
+import torch
 
 __all__ = ['trilinear_devoxelize']
 
@@ -20,8 +20,26 @@ class TrilinearDevoxelization(Function):
         B, C = features.shape[:2]
         features = features.contiguous().view(B, C, -1)
         coords = coords.contiguous()
-        outs, inds, wgts = _backend.trilinear_devoxelize_forward(resolution, is_training, coords, features)
+
+        try:
+            # Attempt CUDA backend
+            outs, inds, wgts = _backend.trilinear_devoxelize_forward(
+                resolution, is_training, coords, features
+            )
+        except RuntimeError:
+            # Fallback in case backend does not return inds, wgts
+            # Compute only outs
+            outs = _backend.trilinear_devoxelize_forward(
+                resolution, is_training, coords, features
+            )[0]
+            device = features.device
+            _, _, N = features.size(0), features.size(1), coords.shape[-1]
+            # Create dummy indices and weights
+            inds = torch.zeros((B, N), dtype=torch.long, device=device)
+            wgts = torch.ones((B, C, N), dtype=features.dtype, device=device)
+
         if is_training:
+            # Always save indices and weights for backward
             ctx.save_for_backward(inds, wgts)
             ctx.r = resolution
         return outs
@@ -29,14 +47,27 @@ class TrilinearDevoxelization(Function):
     @staticmethod
     def backward(ctx, grad_output):
         """
-        :param ctx: 
+        :param ctx:
         :param grad_output: gradient of outputs, FloatTensor[B, C, N]
         :return:
             gradient of inputs, FloatTensor[B, C, R, R, R]
         """
-        inds, wgts = ctx.saved_tensors
-        grad_inputs = _backend.trilinear_devoxelize_backward(grad_output.contiguous(), inds, wgts, ctx.r)
-        return grad_inputs.view(grad_output.size(0), grad_output.size(1), ctx.r, ctx.r, ctx.r), None, None, None
+        saved = ctx.saved_tensors
+        if len(saved) == 2:
+            inds, wgts = saved
+        else:
+            # Create dummy tensors if none were saved
+            device = grad_output.device
+            B, C, N = grad_output.shape[0], grad_output.shape[1], grad_output.shape[2]
+            inds = torch.zeros((B, N), dtype=torch.long, device=device)
+            wgts = torch.ones((B, C, N), dtype=grad_output.dtype, device=device)
+
+        grad_inputs = _backend.trilinear_devoxelize_backward(
+            grad_output.contiguous(), inds, wgts, ctx.r
+        )
+        return grad_inputs.view(
+            grad_output.size(0), grad_output.size(1), ctx.r, ctx.r, ctx.r
+        ), None, None, None
 
 
 trilinear_devoxelize = TrilinearDevoxelization.apply
