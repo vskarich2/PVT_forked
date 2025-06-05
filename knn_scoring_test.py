@@ -14,13 +14,14 @@ Workflow:
 8) Print tensor shapes and sample neighbor indices for verification.
 """
 import os
+
 import numpy as np
 import torch
-
 from PVT_forked_repo.PVT_forked.constants import BASE_DIR, DATA_DIR, NUM_POINTS_TEST
 from PVT_forked_repo.PVT_forked.data import pc_normalize
-from modules.voxelization import Voxelization           # Voxelization module
+
 from knn_scoring import knn_filter_empty, build_edge_features, EdgeScorer
+from modules.voxelization import Voxelization  # Voxelization module
 
 
 def main(txt_path: str, resolution: int = 30, k: int = 100, eps=1e-6):

@@ -1,7 +1,10 @@
 # python_fallback.py
-import torch.nn.functional as F
 import math
+
 import torch
+import torch.nn.functional as F
+
+
 def trilinear_devoxelize_forward_cpu(features, coords, resolution):
     """
     CPU stub matching signature:

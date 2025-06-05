@@ -1,7 +1,5 @@
-import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # needed for 3D plotting
-
+import numpy as np
 from PVT_forked_repo.PVT_forked.modules.dsva.dsva_saliency import DynamicSparseSaliency
 
 

@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
-from torch.nn import functional as F
-
 from model.utils import create_pointnet_components
+from torch.nn import functional as F
 
 __all__ = ['pvt']
 

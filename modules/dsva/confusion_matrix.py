@@ -1,9 +1,11 @@
-import torch
-import torch.nn.functional as F
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.metrics import confusion_matrix
 import itertools
+import itertools
+
+import matplotlib.pyplot as plt
+import numpy as np
+
 
 def plot_confusion_matrix(cm, class_names, normalize=True, figsize=(10, 8), cmap=plt.cm.Blues):
     """

@@ -1,15 +1,16 @@
 from __future__ import print_function
-import warnings
+
 import sys
+import warnings
+
 import torch
 
 from dynamic_config import ConfigWatcher
+from trainer import Trainer
 
 # This enables verbose mode for error messages in torch.
 # TURN OFF IN PROD, SLOWS EVERYTHING DOWN
-#torch.autograd.set_detect_anomaly(True)
-
-from trainer import Trainer
+# torch.autograd.set_detect_anomaly(True)
 
 # ignore everything
 warnings.filterwarnings("ignore")

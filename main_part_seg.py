@@ -1,16 +1,18 @@
 from __future__ import print_function
-import os
+
 import argparse
+import os
+
+import numpy as np
+import sklearn.metrics as metrics
 import torch
-import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
+from torch.utils.data import DataLoader
+
 from data import _ShapeNetDataset
 from model.partpvt import pvt_partseg
-import numpy as np
-from torch.utils.data import DataLoader
 from util import cal_loss, IOStream
-import sklearn.metrics as metrics
 
 seg_num = [4, 2, 2, 4, 4, 3, 3, 2, 4, 2, 6, 2, 3, 3, 3, 3]
 index_start = [0, 4, 6, 8, 12, 16, 19, 22, 24, 28, 30, 36, 38, 41, 44, 47]

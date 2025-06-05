@@ -1,6 +1,6 @@
+import modules.functional as F  # Assumes custom voxel ops like avg_voxelize
 import torch
 import torch.nn as nn
-import modules.functional as F  # Assumes custom voxel ops like avg_voxelize
 
 __all__ = ['Voxelization']
 

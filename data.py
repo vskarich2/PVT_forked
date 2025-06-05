@@ -1,11 +1,13 @@
-import os
 import glob
+import json
+import os
+
 import h5py
 import numpy as np
+import open3d as o3d
 import torch
 from torch.utils.data import Dataset
-import json
-import open3d as o3d
+
 
 def pc_normalize(pc):
     """Normalize point cloud to unit sphere

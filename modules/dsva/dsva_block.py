@@ -1,10 +1,8 @@
+import torch
 import torch.nn as nn
-from timm.layers import DropPath
-
 from modules.dsva.dsva_cross_attention import SparseDynamicVoxelAttention
 from modules.feed_forward import FeedForward
-
-import torch
+from timm.layers import DropPath
 
 
 def map_sparse_to_dense(updated_tokens, non_empty_mask, V, D):

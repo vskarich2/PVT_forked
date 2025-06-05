@@ -1,9 +1,8 @@
 import functools
 
 import torch.nn as nn
-
 from modules import SharedMLP
-from modules.pvtconv import PVTConv,PartPVTConv,SemPVTConv
+from modules.pvtconv import PVTConv, PartPVTConv, SemPVTConv
 
 __all__ = ['create_mlp_components', 'create_pointnet_components']
 

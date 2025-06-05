@@ -1,13 +1,14 @@
 # tests/test_dsva_attention.py
 
+import numpy as np
+import pytest
 import torch
 import torch.nn as nn
-import pytest
-import numpy as np
 
 # Import both versions; adjust paths if needed:
 from modules.dsva.dsva_cross_attention import SparseDynamicVoxelAttention as OldSparseDynamicVoxelAttention
 from modules.dsva.faster_dsva_cross_attention import SparseDynamicVoxelAttention
+
 
 def _make_random_input(
     batch_size: int,

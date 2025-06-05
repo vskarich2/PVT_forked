@@ -1,14 +1,14 @@
-import torch
-from torch.utils.data import DataLoader
-import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
-import pandas as pd
 import random
 
+import matplotlib.pyplot as plt
+import pandas as pd
+import torch
+from torch.utils.data import DataLoader
 
 # ─── 1) IMPORT YOUR ACTUAL DATA/MODEL CLASSES HERE ────────────────────────
 from data import ScanObjectNNDataset
 from model.pvt import pvt
+
 
 # ─── 2) FUNCTION TO COMPARE TWO CHECKPOINTS ─────────────────────────────
 def compare_scanobjectnn_checkpoints(

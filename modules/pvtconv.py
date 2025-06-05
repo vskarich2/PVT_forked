@@ -1,16 +1,13 @@
-import torch
-import torch.nn as nn
 # Assuming these are custom modules defined elsewhere, providing their functionality.
 # F: Likely a functional module for operations like trilinear_devoxelize.
 # Voxelization: Module to convert point clouds to voxel grids.
 # SharedTransformer: A transformer module for point features.
 # SE3d: A 3D Squeeze-and-Excitation module for channel-wise re-weighting.
 import modules.functional as F
-from modules.voxelization import Voxelization
-from modules.shared_transformer import SharedTransformer
+import torch.nn as nn
 from modules.se import SE3d
-from timm.models.layers import DropPath # Used for stochastic depth
-import numpy as np
+from modules.shared_transformer import SharedTransformer
+from modules.voxelization import Voxelization
 
 # Defines the public API of this module, specifying which classes are exposed
 # when `from . import module_name` is used.

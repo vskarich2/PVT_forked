@@ -1,10 +1,11 @@
 from __future__ import print_function
+
 import warnings
 
+import torch
 from matplotlib import pyplot as plt
 # ignore everything
 from tqdm.auto import tqdm, trange
-import torch
 
 from PVT_forked.modules.dsva.confusion_matrix import plot_confusion_matrix
 from PVT_forked.modules.dsva.dsva_cross_attention import SparseDynamicVoxelAttention
@@ -13,7 +14,6 @@ torch.backends.cudnn.benchmark = True
 
 warnings.filterwarnings("ignore")
 import os
-import argparse
 from sklearn.metrics import confusion_matrix
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
@@ -22,7 +22,7 @@ from torch.cuda.amp import autocast, GradScaler
 from model.pvt import pvt
 import numpy as np
 from torch.utils.data import DataLoader
-from util import cal_loss, IOStream
+from util import cal_loss
 import sklearn.metrics as metrics
 import provider
 import datetime
@@ -183,7 +183,7 @@ class Trainer():
                 avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
                 outstr = 'Test :: test acc: %.6f, test avg acc: %.6f' % (test_acc, avg_per_class_acc)
                 print(outstr)
-    
+
     def make_confusion_matrix_for_modelnet(self):
 
         print("Generating Confusion Matrix for ModelNet40....")
@@ -949,6 +949,33 @@ class Trainer():
         print("[test_compare_with_hooks] → Exiting method, returning all_results")
         return all_results
 
+def generate_voxel_grid_centers(resolution, args):
+    """
+    Returns a tensor of shape (V, 3) with the 3D center coordinates
+    of each voxel in a cubic grid of shape (R x R x R), normalized to [-1, 1]^3.
 
+    Args:
+        resolution (int): Number of voxels per axis (R)
+        device (str or torch.device): Where to place the resulting tensor
 
+    Returns:
+        Tensor: (V, 3), where V = R^3
+    """
+    # Generate voxel indices in 3D grid: shape (R, R, R, 3)
+    grid = torch.stack(torch.meshgrid(
+        torch.arange(resolution),
+        torch.arange(resolution),
+        torch.arange(resolution),
+        indexing='ij'  # Makes indexing (x, y, z) order
+    ), dim=-1).float()  # shape: (R, R, R, 3)
+
+    # Reshape to flat list of voxel indices: (V, 3) where V = R^3
+    grid = grid.reshape(-1, 3)  # e.g., (27000, 3) for R=30
+
+    # Compute voxel centers in normalized [-1, 1]^3 space
+    grid = (grid + 0.5) / resolution  # Normalize to (0, 1)
+    grid = grid * 2 - 1  # Map to (-1, 1)
+
+    voxel_centers = grid.unsqueeze(0).expand(args.batch_size, -1, -1)  # shape: (B, R^3, 3)
+    return voxel_centers.to(args.device)
 

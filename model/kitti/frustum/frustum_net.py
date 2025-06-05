@@ -1,14 +1,11 @@
 import functools
 
+import modules.functional as F
 import numpy as np
 import torch.nn as nn
-
-import modules.functional as F
 from model.kitti.frustum.box_estimation import *
-from model.kitti.frustum.segmentation import *
 from model.kitti.frustum.center_regression_net import CenterRegressionNet
-
-
+from model.kitti.frustum.segmentation import *
 
 __all__ = ['FrustumPVT']
 

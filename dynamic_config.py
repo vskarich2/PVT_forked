@@ -1,16 +1,16 @@
+import torch
+import os
+import threading
 import time
+from typing import Any, Dict, Optional
+
 import torch
 import torch.nn as nn
+import yaml
+
 
 # Assume PVT, DSVA_Block, SBoxBlock, RelativeAttention, etc. are defined elsewhere
 # from your_codebase import PVT, DSVA_Block, SBoxBlock, RelativeAttention
-
-
-import threading
-import time
-import yaml
-import os
-from typing import Any, Dict, Optional
 
 
 class ConfigWatcher:

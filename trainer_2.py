@@ -1,11 +1,12 @@
 from __future__ import print_function
+
 import warnings
 
+# from tqdm import tqdm, trange
+import torch
 # ignore everything
 # from tqdm.notebook import tqdm, trange
 from tqdm.auto import tqdm, trange
-# from tqdm import tqdm, trange
-import torch
 
 from data import ScanObjectNNDatasetModified
 
@@ -13,7 +14,6 @@ torch.backends.cudnn.benchmark = True
 
 warnings.filterwarnings("ignore")
 import os
-import argparse
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from data import ModelNetDataLoader, ScanObjectNNDataset
@@ -21,7 +21,7 @@ from torch.cuda.amp import autocast, GradScaler
 from model.pvt import pvt
 import numpy as np
 from torch.utils.data import DataLoader
-from util import cal_loss, IOStream
+from util import cal_loss
 import sklearn.metrics as metrics
 import provider
 import datetime

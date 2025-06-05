@@ -1,10 +1,9 @@
 import torch
 import torch.nn as nn
-import numpy as np
-from timm.layers import DropPath
-
 from modules.box_attention import BoxAttention
 from modules.feed_forward import FeedForward
+from timm.layers import DropPath
+
 
 class Sboxblock(nn.Module):
     """

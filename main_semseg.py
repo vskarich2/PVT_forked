@@ -1,16 +1,18 @@
 from __future__ import print_function
-import os
+
 import argparse
+import os
+
+import numpy as np
+import sklearn.metrics as metrics
 import torch
 import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR, StepLR
+from torch.utils.data import DataLoader
+
 from data import S3DIS
 from model.sempvt import pvt_semseg
-import numpy as np
-from torch.utils.data import DataLoader
 from util import cal_loss, IOStream
-import sklearn.metrics as metrics
-import time
 
 
 def _init_():
