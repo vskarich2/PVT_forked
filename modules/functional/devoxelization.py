@@ -21,17 +21,19 @@ class TrilinearDevoxelization(Function):
         """
         B, C = features.shape[:2]
 
-        # We pass the voxel grid as‐is (shape: B × C × R × R × R).
-        # The backend implementation will return (outs, inds, wgts).
+        # Permute coords from (B, 3, N) → (B, N, 3) to match backend stub’s expectation
+        coords_fixed = coords.permute(0, 2, 1).contiguous()  # shape: (B, N, 3)
+
+        # Call the backend; both CUDA and CPU‐fallback return (outs, inds, wgts)
         outs, inds, wgts = _backend.trilinear_devoxelize_forward(
-            resolution,       # int
-            is_training,      # bool
-            coords.contiguous(),   # (B, 3, N)
-            features.contiguous()   # (B, C, R, R, R)
+            resolution,            # int
+            is_training,           # bool
+            coords_fixed,          # (B, N, 3)
+            features.contiguous()  # (B, C, R, R, R)
         )
 
-        # Always save these two tensors for backward:
-        #  - inds: flat‐index per point (B, N)
+        # Always save these two tensors for backward
+        #  - inds: flat index per point (B, N)
         #  - wgts: interpolation weights (B, C, N)
         ctx.save_for_backward(inds, wgts)
         ctx.r = resolution
@@ -46,23 +48,24 @@ class TrilinearDevoxelization(Function):
             grad_features: FloatTensor[B, C, R, R, R]  (gradient w.r.t. the voxel grid)
             None, None, None  (no gradients for coords, resolution, is_training)
         """
-        # Unpack the two saved tensors:
-        inds, wgts = ctx.saved_tensors  # both exist now, guaranteed
+        # Unpack the two saved tensors (guaranteed to exist)
+        inds, wgts = ctx.saved_tensors  # shapes: (B, N) and (B, C, N)
 
-        # Call the backend backward function:
+        # Call the backend backward function
         grad_inputs = _backend.trilinear_devoxelize_backward(
             grad_output.contiguous(),  # (B, C, N)
             inds,                      # (B, N)
             wgts,                      # (B, C, N)
             ctx.r                      # resolution R
         )
-        # grad_inputs comes back as (B, C, R^3).  Reshape to (B, C, R, R, R):
+
+        # grad_inputs returns (B, C, R^3); reshape to (B, C, R, R, R)
         return grad_inputs.view(
-            grad_output.size(0),    # B
-            grad_output.size(1),    # C
-            ctx.r,                  # R
-            ctx.r,                  # R
-            ctx.r                   # R
+            grad_output.size(0),  # B
+            grad_output.size(1),  # C
+            ctx.r,                # R
+            ctx.r,                # R
+            ctx.r                 # R
         ), None, None, None
 
 
