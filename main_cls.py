@@ -105,6 +105,7 @@ if __name__ == "__main__":
 
     # Added arguments
     parser.add_argument('--amp', action='store_true', help='Use amp speedup.')
+    parser.add_argument('--dev_scan_subset', action='store_true', help='Use dev scanobject.')
     parser.add_argument('--persist_workers', action='store_true', help='Persist workers between epochs.')
     parser.add_argument('--prefetch_factor', type=int, default=2,
                         help='How much data to prefetch')

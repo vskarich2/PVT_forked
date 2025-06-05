@@ -396,13 +396,13 @@ class ScanObjectNNDatasetModified(Dataset):
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
         # 1) Decide which “root folder” to use
-        if getattr(args, 'dev_scan_subset', False):
+        if self.args.dev_scan_subset:
             DATA_DIR = os.path.join(BASE_DIR, 'data', 'dev_scanObjectNN_subset')
         else:
             DATA_DIR = os.path.join(BASE_DIR, 'data', 'ScanObjectNN')
 
         # 2) Pick the correct H5 filename
-        if getattr(args, 'dev_scan_subset', False):
+        if self.args.dev_scan_subset:
             # for the 10‐sample dev subset
             if partition == 'train':
                 h5_name = 'training_subset_10.h5'
@@ -522,13 +522,13 @@ class ScanObjectNNDataset(Dataset):
         BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
         # 1) Decide which “root folder” to use
-        if args.local_dev:
+        if args.dev_scan_subset:
             DATA_DIR = os.path.join(BASE_DIR, 'data', 'dev_scanObjectNN_subset')
         else:
             DATA_DIR = os.path.join(BASE_DIR, 'data', 'ScanObjectNN')
 
         # 2) Pick the correct H5 filename
-        if args.local_dev:
+        if args.dev_scan_subset:
             # for the 10‐sample dev subset
             if partition == 'train':
                 h5_name = 'training_subset_10.h5'

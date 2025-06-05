@@ -427,11 +427,6 @@ class Trainer():
         self.model._attn_acts = []  # will collect forward outputs from each SparseDynamicVoxelAttention
         self.model._attn_grads = []  # will collect backward grads from each SparseDynamicVoxelAttention
 
-        def _voxel_hook(module, inp, out):
-            self._last_voxel_feats = out[0]
-            self._last_voxel_coords = out[1]
-
-        self.model.voxelization.register_forward_hook(_voxel_hook)
         # (C) Define hook functions:
         def _forward_hook(module, inp, out):
             # `module` is the SparseDynamicVoxelAttention instance;
@@ -553,6 +548,7 @@ class Trainer():
                 args=self.args,
                 knn_normals=self.args.knn_normals
             )
+
         else:
             ds = ScanObjectNNDataset(
                 npoint=self.args.num_points,
@@ -561,16 +557,18 @@ class Trainer():
                 knn_normals=self.args.knn_normals
             )
 
-            return DataLoader(
-                ds,
-                batch_size=self.args.test_batch_size,
-                shuffle=False,
-                num_workers=self.args.num_workers,
-                drop_last=False,
-                pin_memory=True,
-                persistent_workers=self.args.persist_workers,
-                prefetch_factor=self.args.prefetch_factor
-            )
+        return DataLoader(
+            ds,
+            batch_size=self.args.test_batch_size,
+            shuffle=False,
+            num_workers=self.args.num_workers,
+            drop_last=False,
+            pin_memory=True,
+            persistent_workers=self.args.persist_workers,
+            prefetch_factor=self.args.prefetch_factor
+        )
+
+
 
     def get_modelnet_test_loader(self):
         test_loader = DataLoader(ModelNetDataset(
@@ -596,7 +594,7 @@ class Trainer():
         total_true = []
         total_pred = []
 
-        for (data, label, classname) in tqdm(test_loader, desc="Testing Batches"):
+        for (data, label, classname) in test_loader:
             (feats, coords), label = self.preprocess_test_data(data, label)
             feats = feats.to(self.device)
             coords = coords.to(self.device)
@@ -683,17 +681,17 @@ class Trainer():
                 # Then you know that “a1[j]” corresponds to “coords_occ_0[j]”, etc.
 
                 R0 = vox_feats_0.shape[2]
-                centers0 = generate_voxel_grid_centers(R0, self.args)[0].cpu().numpy()
+                centers0 = modules.dsva.dsva_block.generate_voxel_grid_centers(R0, self.args)[0].cpu().numpy()
                 occ_idx0 = torch.nonzero(mask0_1d, as_tuple=False).squeeze(1).numpy()
                 coords_occ0 = centers0[occ_idx0]
 
                 R1 = vox_feats_1.shape[2]
-                centers1 = generate_voxel_grid_centers(R1, self.args)[0].cpu().numpy()
+                centers1 = modules.dsva.dsva_block.generate_voxel_grid_centers(R1, self.args)[0].cpu().numpy()
                 occ_idx1 = torch.nonzero(mask1_1d, as_tuple=False).squeeze(1).numpy()
                 coords_occ1 = centers1[occ_idx1]
 
                 R2 = vox_feats_2.shape[2]
-                centers2 = generate_voxel_grid_centers(R2, self.args)[0].cpu().numpy()
+                centers2 = modules.dsva.dsva_block.generate_voxel_grid_centers(R2, self.args)[0].cpu().numpy()
                 occ_idx2 = torch.nonzero(mask2_1d, as_tuple=False).squeeze(1).numpy()
                 coords_occ2 = centers2[occ_idx2]
 
