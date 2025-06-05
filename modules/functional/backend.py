@@ -7,81 +7,81 @@ from modules.functional.python_fallback import *
 try:
     from torch.utils.cpp_extension import load
     _src_path = os.path.dirname(os.path.abspath(__file__))
-    _backend = load(name='_pvt_backend',
-                    extra_cflags=['-O3', '-std=c++17'],
-                    sources=[os.path.join(_src_path, 'src', f) for f in [
-                        'interpolate/neighbor_interpolate.cpp',
-                        'interpolate/neighbor_interpolate.cu',
-                        'interpolate/trilinear_devox.cpp',
-                        'interpolate/trilinear_devox.cu',
-                        'sampling/sampling.cpp',
-                        'sampling/sampling.cu',
-                        'voxelization/vox.cpp',
-                        'voxelization/vox.cu',
-                        'bindings.cpp',
-                    ]]
-                    )
+    _backend = load(
+        name='_pvt_backend',
+        extra_cflags=['-O3', '-std=c++17'],
+        sources=[os.path.join(_src_path, 'src', f) for f in [
+            'interpolate/neighbor_interpolate.cpp',
+            'interpolate/neighbor_interpolate.cu',
+            'interpolate/trilinear_devox.cpp',
+            'interpolate/trilinear_devox.cu',
+            'sampling/sampling.cpp',
+            'sampling/sampling.cu',
+            'voxelization/vox.cpp',
+            'voxelization/vox.cu',
+            'bindings.cpp',
+        ]]
+    )
 except Exception as e:
-    error_msg = traceback.format_exc()
-    print(f"Could not build CUDA backend. \nFalling back to CPU stubs.")
-    print(error_msg)
-
+    # If CUDA build fails, fall back to CPU stubs.
     from modules.functional.python_fallback import *
 
     class CPUBackend:
-
         @staticmethod
         def trilinear_devoxelize_forward(
                 resolution: int,
                 is_training: bool,
-                coords: torch.Tensor,  # (B, N, 3) float
-                grid: torch.Tensor  # (B, C, R, R, R)
+                coords: torch.Tensor,  # expects (B, N, 3)
+                grid: torch.Tensor     # shape (B, C, R, R, R)
         ):
-            # call your pure‐python interp
+            # 1) Pure‐Python interpolation
             outs = trilinear_devoxelize_cpu(
                 grid=grid,
-                coords=coords,
+                coords=coords,      # must be (B, N, 3)
                 resolution=resolution
-            )  # (B, C, N)
-            # build a flat‐index map for backward:
-            idx_int = coords.long()  # assume coords in [0, R-1]
+            )  # returns (B, C, N)
+
+            # 2) Build a flat‐index map for backward
+            idx_int = coords.long()  # (B, N, 3)
             idx_flat = (
-                    idx_int[..., 0] * (resolution * resolution)
-                    + idx_int[..., 1] * resolution
-                    + idx_int[..., 2]
-            )  # (B, N)
-            # you can return dummy weights (they’re only used for grad–routing)
+                idx_int[..., 0] * (resolution * resolution)
+                + idx_int[..., 1] * resolution
+                + idx_int[..., 2]
+            )  # shape (B, N)
+
+            # 3) Create dummy weights (used only for gradient routing)
             B, C, N = outs.shape
             wgts = torch.ones(B, C, N, device=outs.device, dtype=outs.dtype)
-            return outs, idx_flat, wgts
+
+            return outs, idx_flat, wgts  # all three outputs
 
         @staticmethod
         def trilinear_devoxelize_backward(
                 resolution: int,
                 is_training: bool,
-                coords: torch.Tensor,  # (B, N, 3)
-                grid: torch.Tensor,  # placeholder, not used
-                grad_out: torch.Tensor  # (B, C, R, R, R)
+                coords: torch.Tensor,   # shape (B, N, 3)
+                grid: torch.Tensor,     # placeholder, not used
+                grad_out: torch.Tensor  # shape (B, C, R, R, R)
         ):
-            # simply gather gradient at the nearest grid cell
+            # Gather gradient at nearest grid cell
             B, C, R1, R2, R3 = grad_out.shape
             R = R1
-            idx_int = coords.long()
+            idx_int = coords.long()  # (B, N, 3)
             idx_flat = (
-                    idx_int[..., 0] * (R * R)
-                    + idx_int[..., 1] * R
-                    + idx_int[..., 2]
+                idx_int[..., 0] * (R * R) +
+                idx_int[..., 1] * R +
+                idx_int[..., 2]
             )  # (B, N)
-            grad_flat = grad_out.view(B, C, -1)  # (B, C, R^3)
+
+            grad_flat = grad_out.view(B, C, -1)  # (B, C, R³)
             grad_feats = torch.gather(
                 grad_flat, 2,
                 idx_flat.unsqueeze(1).expand(-1, C, -1)
             )  # (B, C, N)
-            return grad_feats
+            return grad_feats  # (B, C, N)
 
         @staticmethod
         def avg_voxelize_forward(features, coords, resolution):
-            # match the real API
             return avg_voxelize_forward_cpu(features, coords, resolution)
 
         @staticmethod
@@ -95,27 +95,7 @@ except Exception as e:
         @staticmethod
         def trilinear_devoxelize(grid, coords, resolution, training=False, **kw):
             return trilinear_devoxelize_cpu(grid, coords, resolution, training=training)
+
     _backend = CPUBackend()
 
-# NOTE: This is the custom CUDA C++ code for the sparse window attention mechanism
-# import os
-#
-# from torch.utils.cpp_extension import load
-#
-# _src_path = os.path.dirname(os.path.abspath(__file__))
-# _backend = load(name='_pvt_backend',
-#                 extra_cflags=['-O3', '-std=c++17'],
-#                 sources=[os.path.join(_src_path,'src', f) for f in [
-#                     'interpolate/neighbor_interpolate.cpp',
-#                     'interpolate/neighbor_interpolate.cu',
-#                     'interpolate/trilinear_devox.cpp',
-#                     'interpolate/trilinear_devox.cu',
-#                     'sampling/sampling.cpp',
-#                     'sampling/sampling.cu',
-#                     'voxelization/vox.cpp',
-#                     'voxelization/vox.cu',
-#                     'bindings.cpp',
-#                 ]]
-#                 )
-#
-# __all__ = ['_backend']
+__all__ = ['_backend']
