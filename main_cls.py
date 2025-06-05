@@ -77,9 +77,9 @@ def generate_saliency(args):
     """
 
     # 1) Use GPU if available (so CUDA-based voxel ops can run)
-     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-     args.device = str(device)   # e.g. 'cuda' or 'cpu'
-     args.dev_scan_subset = False   ## Setting args.dev_scan_subset = False makes it load the full ScanObjectNN dataset.
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    args.device = str(device)   # e.g. 'cuda' or 'cpu'
+    args.dev_scan_subset = False   ## Setting args.dev_scan_subset = False makes it load the full ScanObjectNN dataset.
 
 
 
