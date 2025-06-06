@@ -11,6 +11,7 @@ from cs231n.training.confusion import ConfusionMatrixMixin
 from cs231n.training.dataloaders import DataLoaderMixin
 from cs231n.training.preprocess_data import DataPreprocessingMixin
 from cs231n.training.saliency import SaliencyMixin
+from cs231n.training.stats import StatsMixin
 from cs231n.training.wandb_logging import WandbMixin
 
 torch.backends.cudnn.benchmark = True
@@ -31,7 +32,8 @@ class Trainer(
     WandbMixin,
     DataLoaderMixin,
     SaliencyMixin,
-    DataPreprocessingMixin
+    DataPreprocessingMixin,
+    StatsMixin
 ):
 
     def __init__(self, args, io):
