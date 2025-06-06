@@ -106,9 +106,12 @@ class Trainer(
 
             with torch.no_grad():
                 for data, label in logging_wrapper:
-                    data = data.to(self.device)
-                    label = label.to(self.device)
                     (feats, coords), label = self.preprocess_test_data(data, label)
+
+                    feats = feats.to(self.device, non_blocking=True)
+                    coords = coords.to(self.device, non_blocking=True)
+                    label = label.to(self.device, non_blocking=True)
+
                     logits = self.model(feats)
                     preds = logits.max(dim=1)[1]
                     test_true.append(label.cpu().numpy())
@@ -145,9 +148,12 @@ class Trainer(
         )
         with torch.no_grad():
             for data, label in test_bar:
-                data = data.to(self.device)
-                label = label.to(self.device)
                 (feats, coords), label = self.preprocess_test_data(data, label)
+                
+                feats = feats.to(self.device, non_blocking=True)
+                coords = coords.to(self.device, non_blocking=True)
+                label = label.to(self.device, non_blocking=True)
+
                 logits = self.model(feats)
                 loss = self.criterion(logits, label)
                 test_loss += loss.item()
@@ -192,10 +198,12 @@ class Trainer(
         running_count = 0.0
 
         for data, label in train_bar:
-            data = data.to(self.device)
-            label = label.to(self.device)
-
             (feats, coords), label = self.preprocess_data(data, label)
+
+            feats = feats.to(self.device, non_blocking=True)
+            coords = coords.to(self.device, non_blocking=True)
+            label = label.to(self.device, non_blocking=True)
+
             self.opt.zero_grad()
             logits = self.model(feats)
             loss = self.criterion(logits, label)
