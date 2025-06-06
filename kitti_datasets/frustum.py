@@ -2,9 +2,10 @@ import os
 import pickle
 
 import numpy as np
+from torch.utils.data import Dataset
+
 from kitti_datasets.attributes import kitti_attributes as kitti
 from kitti_datasets.container import G
-from torch.utils.data import Dataset
 
 
 class FrustumKittiDataset(Dataset):

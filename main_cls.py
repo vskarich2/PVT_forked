@@ -5,8 +5,8 @@ import warnings
 
 import torch
 
-from dynamic_config import ConfigWatcher
 from cs231n.training.trainer import Trainer
+from dynamic_config import ConfigWatcher
 
 # This enables verbose mode for error messages in torch.
 # TURN OFF IN PROD, SLOWS EVERYTHING DOWN
@@ -167,7 +167,8 @@ if __name__ == "__main__":
         trainer.fit()
     elif args.scanobject_compare:
         trainer.make_confusion_matrix_for_scanobject()
-        #trainer.test_compare_with_hooks()
+    elif args.scanobject_compare:
+        trainer.test_compare_with_hooks()
     else:
         trainer.test()
 

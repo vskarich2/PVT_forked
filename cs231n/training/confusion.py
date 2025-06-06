@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 # ignore everything
 from tqdm.auto import tqdm
 
-from cs231n.dsva import plot_confusion_matrix
+from cs231n.dsva.confusion_matrix import plot_confusion_matrix
 
 torch.backends.cudnn.benchmark = True
 

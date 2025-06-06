@@ -1,6 +1,7 @@
 import numpy as np
 import torch
 import torch.nn as nn
+
 from modules.attention_transformer import Transformer
 from modules.box_attention import rand_bbox
 

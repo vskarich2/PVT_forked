@@ -3,8 +3,9 @@
 # Voxelization: Module to convert point clouds to voxel grids.
 # SharedTransformer: A transformer module for point features.
 # SE3d: A 3D Squeeze-and-Excitation module for channel-wise re-weighting.
-import modules.functional as F
 import torch.nn as nn
+
+import modules.functional as F
 from modules.se import SE3d
 from modules.shared_transformer import SharedTransformer
 from modules.voxelization import Voxelization

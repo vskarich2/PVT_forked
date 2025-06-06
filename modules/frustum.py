@@ -2,8 +2,8 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from util import huber_loss
 
+from util import huber_loss
 
 __all__ = ['FrustumPointNetLoss', 'get_box_corners_3d']
 

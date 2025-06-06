@@ -1,8 +1,5 @@
 import os
 
-import torch
-from modules.functional.python_fallback import *
-
 try:
     from torch.utils.cpp_extension import load
     _src_path = os.path.dirname(os.path.abspath(__file__))

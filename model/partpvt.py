@@ -1,9 +1,10 @@
 import numpy as np
 import torch
 import torch.nn as nn
-from model.utils import create_pointnet_components, create_mlp_components
 from torch.autograd import Variable
 from torch.nn import functional as F
+
+from model.utils import create_pointnet_components, create_mlp_components
 
 __all__ = ['pvt_partseg']
 

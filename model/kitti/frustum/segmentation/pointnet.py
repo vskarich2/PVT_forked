@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+
 from model.utils import create_pointnet_components, create_mlp_components
 
 __all__ = ['InstanceSegmentationPVT']

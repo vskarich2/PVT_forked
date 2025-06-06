@@ -1,4 +1,5 @@
 import numpy as np
+
 from kitti_datasets.container import G
 
 __all__ = ['kitti_attributes']

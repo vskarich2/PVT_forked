@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from cs231n.dsva import DSVABlock
-from cs231n.dsva import DSVABlockLarge
+
+from cs231n.dsva.dsva_block import DSVABlockLarge, DSVABlock
 from modules.sboxblock import Sboxblock
 
 
