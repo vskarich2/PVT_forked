@@ -58,8 +58,8 @@ class Trainer(
 
         print(f"\nTraining Run Starting with....{self.args.dataset}")
 
-        train_loader = self.get_train_loader()
-        test_loader = self.get_test_loader()
+        self.train_loader = self.get_train_loader()
+        self.test_loader = self.get_test_loader()
 
         best_test_acc = 0.0
 
@@ -71,12 +71,12 @@ class Trainer(
                 unit="epoch"
         ):
             # Train one epoch
-            train_avg_loss = self.train_one_epoch(epoch, train_loader)
+            train_avg_loss = self.train_one_epoch(epoch)
 
             # Test one epoch
             test_acc = self.test_one_epoch(
                 epoch,
-                test_loader,
+                self.test_loader,
                 train_avg_loss,
                 best_test_acc
             )
@@ -92,9 +92,9 @@ class Trainer(
                     "train/LearningRate": self.scheduler.get_lr()[0],
                     "epoch": epoch
                 })
-    def test(self):
+    def stand_alone_test(self):
 
-        print(f"\nTesting Run Starting with....{self.args.dataset}")
+        print(f"\nPure Testing Run Starting with....{self.args.dataset}")
 
         test_loader = self.get_test_loader()
 
@@ -123,10 +123,11 @@ class Trainer(
     def test_one_epoch(
             self,
             epoch,
-            test_loader,
             train_avg_loss,
             best_test_acc
     ):
+        # Use this method only for running test dataset during training
+        # If you want to run just a test epoch with no training, use the test
 
         test_loss = 0.0
         count = 0.0
@@ -136,7 +137,7 @@ class Trainer(
 
         # Inner test loop wrapped in tqdm
         test_bar = tqdm(
-            test_loader,
+            self.test_loader,
             desc=f"Testing  (Epoch {epoch + 1}/{self.args.epochs})",
             leave=False,
             unit="batch"
@@ -172,14 +173,14 @@ class Trainer(
 
         return test_acc
 
-    def train_one_epoch(self, epoch, train_loader):
+    def train_one_epoch(self, epoch):
 
         self.scheduler.step()
         self.model.train()
 
         # Inner batch loop wrapped in tqdm
         train_bar = tqdm(
-            train_loader,
+            self.train_loader,
             desc=f"Training (Epoch {epoch + 1}/{self.args.epochs})",
             leave=False,
             unit="batch"
@@ -225,8 +226,9 @@ class Trainer(
 
         dir_name = f'{timestamp}_{attn}_{self.args.dataset}_{self.args.exp_name}'
         save_dir = f'{drive_location}/{dir_name}'
-        print(f"Saving checkpoints to....{save_dir}")
-        print("When you see the ✅ it means the checkpoint was saved!!")
+        if not self.args.eval:
+            print(f"Saving checkpoints to....{save_dir}")
+            print("When you see the ✅ it means the checkpoint was saved!!")
 
         return save_dir
 
@@ -263,7 +265,8 @@ class Trainer(
 
     def set_optimizer(self, model):
         if self.args.use_sgd:
-            print("Using SGD")
+            if not self.args.eval:
+                print("Using SGD")
             opt = optim.SGD(
                 model.parameters(),
                 lr=self.args.lr * 10,
@@ -271,7 +274,8 @@ class Trainer(
                 weight_decay=self.args.weight_decay
             )
         else:
-            print("Using AdamW")
+            if not self.args.eval:
+                print("Using AdamW")
             opt = optim.AdamW(
                 model.parameters(),
                 lr=self.args.lr,

@@ -149,7 +149,7 @@ if __name__ == "__main__":
                                                                       'If this flag is set, the --model_path flag must be set to the correct checkpoint')
     args = parser.parse_args()
 
-    _init_(args)
+    #_init_(args)
 
     if args.use_dsva:
         print("Using DSVA!")
@@ -165,11 +165,13 @@ if __name__ == "__main__":
 
     if not args.eval:
         trainer.fit()
-    elif args.scanobject_compare:
+    elif args.conf_matrix:
+        print("Making confusion matrix for scanobject")
         trainer.make_confusion_matrix_for_scanobject()
     elif args.scanobject_compare:
+        print("Running saliency map data logic for scanobject")
         trainer.test_compare_with_hooks()
     else:
-        trainer.test()
+        trainer.stand_alone_test()
 
     watcher.stop()
