@@ -263,15 +263,14 @@ class Trainer(
     def load_model(self, device):
         # Try to load models
         if self.args.model == 'pvt':
-            model = pvt(args=self.args).to(device)
+            num_classes = 15 if self.args.dataset == 'scanobjectnn' else 40
+            model = pvt(args=self.args, num_classes=num_classes).to(device)
         else:
             raise Exception("Not implemented")
         if self.args.use_checkpoint:
             print(f"Loading checkpoint....{self.args.model_path}")
-            model.load_state_dict(
-                torch.load(
-                    self.args.model_path, map_location=device),
-                strict=False)
+            state_dict = torch.load(self.args.model_path, map_location=device)
+            model.load_state_dict(state_dict, strict=False)
         else:
             print(f"NO CHECKPOINT: Loading fresh model!!")
 
