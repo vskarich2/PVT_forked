@@ -75,7 +75,6 @@ class Trainer(
             # Test one epoch
             test_acc = self.test_one_epoch(
                 epoch,
-                self.test_loader,
                 train_avg_loss,
                 best_test_acc
             )
