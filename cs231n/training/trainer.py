@@ -6,7 +6,7 @@ import torch
 import wandb
 # ignore everything
 from tqdm.auto import tqdm, trange
-
+import torch.nn.functional as F
 from cs231n.training.confusion import ConfusionMatrixMixin
 from cs231n.training.dataloaders import DataLoaderMixin
 from cs231n.training.preprocess_data import DataPreprocessingMixin
@@ -21,7 +21,6 @@ import torch.optim as optim
 from torch.optim.lr_scheduler import CosineAnnealingLR
 from model.pvt import pvt
 import numpy as np
-from util import cal_loss
 import sklearn.metrics as metrics
 import datetime
 
@@ -48,7 +47,7 @@ class Trainer(
 
         self.opt = self.set_optimizer(self.model)
         self.scheduler = CosineAnnealingLR(self.opt, self.args.epochs, eta_min=self.args.lr)
-        self.criterion = cal_loss
+        self.criterion = self.cal_loss
         self.checkpoint_folder = self.create_checkpoint_folder_name()
 
         if self.args.wandb:
@@ -107,6 +106,8 @@ class Trainer(
 
             with torch.no_grad():
                 for data, label in logging_wrapper:
+                    data = data.to(self.device)
+                    label = label.to(self.device)
                     (feats, coords), label = self.preprocess_test_data(data, label)
                     logits = self.model(feats)
                     preds = logits.max(dim=1)[1]
@@ -144,6 +145,8 @@ class Trainer(
         )
         with torch.no_grad():
             for data, label in test_bar:
+                data = data.to(self.device)
+                label = label.to(self.device)
                 (feats, coords), label = self.preprocess_test_data(data, label)
                 logits = self.model(feats)
                 loss = self.criterion(logits, label)
@@ -189,6 +192,9 @@ class Trainer(
         running_count = 0.0
 
         for data, label in train_bar:
+            data = data.to(self.device)
+            label = label.to(self.device)
+
             (feats, coords), label = self.preprocess_data(data, label)
             self.opt.zero_grad()
             logits = self.model(feats)
@@ -282,3 +288,21 @@ class Trainer(
                 weight_decay=self.args.weight_decay
             )
         return opt
+
+    def cal_loss(self, pred, gold, smoothing=True):
+        ''' Calculate cross entropy loss, apply label smoothing if needed. '''
+
+        gold = gold.contiguous().view(-1)
+        if smoothing:
+            eps = 0.2
+            n_class = pred.size(1)
+
+            one_hot = torch.zeros_like(pred).scatter(1, gold.view(-1, 1), 1)
+            one_hot = one_hot * (1 - eps) + (1 - one_hot) * eps / (n_class - 1)
+            log_prb = F.log_softmax(pred, dim=1)
+
+            loss = -(one_hot * log_prb).sum(dim=1).mean()
+        else:
+            loss = F.cross_entropy(pred, gold, reduction='mean')
+
+        return loss
