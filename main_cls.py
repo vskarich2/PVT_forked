@@ -166,7 +166,10 @@ if __name__ == "__main__":
 
     if not args.eval:
         trainer.fit()
-    elif args.conf_matrix:
+    elif args.conf_matrix and args.dataset == "modelnet40":
+        print("Making confusion matrix for modelnet40")
+        trainer.make_confusion_matrix_for_modelnet()
+    elif args.conf_matrix and args.dataset == "scanobjectnn":
         print("Making confusion matrix for scanobject")
         trainer.make_confusion_matrix_for_scanobject()
     elif args.scanobject_compare:
