@@ -149,7 +149,7 @@ class Trainer(
         with torch.no_grad():
             for data, label in test_bar:
                 (feats, coords), label = self.preprocess_test_data(data, label)
-                
+
                 feats = feats.to(self.device, non_blocking=True)
                 coords = coords.to(self.device, non_blocking=True)
                 label = label.to(self.device, non_blocking=True)
@@ -300,7 +300,10 @@ class Trainer(
     def cal_loss(self, pred, gold, smoothing=True):
         ''' Calculate cross entropy loss, apply label smoothing if needed. '''
 
+
+        gold = gold.to(pred.device)
         gold = gold.contiguous().view(-1)
+
         if smoothing:
             eps = 0.2
             n_class = pred.size(1)
