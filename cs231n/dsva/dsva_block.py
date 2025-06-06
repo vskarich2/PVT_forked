@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from modules.dsva.dsva_cross_attention import SparseDynamicVoxelAttention
+from cs231n.dsva.dsva_cross_attention import SparseDynamicVoxelAttention
 from modules.feed_forward import FeedForward
 from timm.layers import DropPath
 

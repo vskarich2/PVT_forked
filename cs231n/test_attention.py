@@ -6,8 +6,8 @@ import torch
 import torch.nn as nn
 
 # Import both versions; adjust paths if needed:
-from modules.dsva.dsva_cross_attention import SparseDynamicVoxelAttention as OldSparseDynamicVoxelAttention
-from modules.dsva.faster_dsva_cross_attention import SparseDynamicVoxelAttention
+from cs231n.dsva.dsva_cross_attention import SparseDynamicVoxelAttention as OldSparseDynamicVoxelAttention
+from cs231n.dsva.faster_dsva_cross_attention import SparseDynamicVoxelAttention
 
 
 def _make_random_input(
