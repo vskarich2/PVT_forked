@@ -149,7 +149,8 @@ if __name__ == "__main__":
                                                                       'If this flag is set, the --model_path flag must be set to the correct checkpoint')
     args = parser.parse_args()
 
-    #_init_(args)
+    if not args.local_dev:
+        _init_(args)
 
     if args.use_dsva:
         print("Using DSVA!")
