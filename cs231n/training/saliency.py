@@ -144,7 +144,12 @@ class SaliencyMixin(VoxelGridCentersMixin):
 
                 scalar_logit = logits[i, preds[i]]
                 print(f"  [Batch {batch_idx}, Sample {i}]   scalar_logit.shape: {scalar_logit.shape}  # scalar")
-                scalar_logit.backward(retain_graph=True)
+
+                try:
+                    scalar_logit.backward(retain_graph=True)
+                except Exception as e:
+                    print(f"Caught error: {e}")
+
                 print(f"  [Batch {batch_idx}, Sample {i}]   backward done")
 
                 # Grab activations & grads
