@@ -12,6 +12,7 @@ class WandbMixin:
         """
         Initialize a W&B run using the project's hyperparameters.
         """
+
         wandb.init(
             entity="hajdukv",
             project="cs231n_final_project",
