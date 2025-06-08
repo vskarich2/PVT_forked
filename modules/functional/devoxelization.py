@@ -22,9 +22,9 @@ class TrilinearDevoxelization(Function):
         coords = coords.contiguous()
         outs, inds, wgts = _backend.trilinear_devoxelize_forward(resolution, is_training, coords, features)
 
-        #if is_training:
-        ctx.save_for_backward(inds, wgts)
-        ctx.r = resolution
+        if is_training:
+            ctx.save_for_backward(inds, wgts)
+            ctx.r = resolution
         return outs
 
     @staticmethod
