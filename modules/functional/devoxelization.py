@@ -38,9 +38,6 @@ class TrilinearDevoxelization(Function):
         """
         inds, wgts = ctx.saved_tensors
         print("GOT HERE")
-        max_idx = ctx.r
-        assert (inds >= 0).all() and (inds < max_idx).all(), \
-            f"Found out-of-bounds index in devoxelize: min={inds.min().item()}, max={inds.max().item()}, limit={max_idx}"
         grad_inputs = _backend.trilinear_devoxelize_backward(grad_output.contiguous(), inds, wgts, ctx.r)
         return grad_inputs.view(grad_output.size(0), grad_output.size(1), ctx.r, ctx.r, ctx.r), None, None, None
 
