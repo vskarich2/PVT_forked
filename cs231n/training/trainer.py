@@ -360,7 +360,7 @@ class Trainer(
             # 1) Warmup from 0 → 1×LR over first warmup_epochs
             warmup_sched = LinearLR(
                 optimizer,
-                start_factor=0.0,
+                start_factor=1e-6,
                 end_factor=1.0,
                 total_iters=warmup_epochs
             )
