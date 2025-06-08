@@ -246,7 +246,7 @@ class Trainer(
 
             # 2) High-quality Mis‐classified examples
             imgs = []
-            for pc, t, p, eid in mis_examples:
+            for pc, t, p, in mis_examples:
                 # Color by height (z) for more visual detail
                 colors = pc[:, 2]
                 fig = plt.figure(figsize=(4, 4), dpi=120)

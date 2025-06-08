@@ -33,7 +33,19 @@ except Exception as e:
                 coords: torch.Tensor,  # (B, N, 3) float
                 grid: torch.Tensor  # (B, C, R, R, R)
         ):
-            # call your pure‐python interp
+            # # call your pure‐python interp
+            # print("Checking voxel_coords ranges:")
+            # print("  min coords:", coords.min(dim=1).values.min(),
+            #       coords.min(dim=1).values.min(dim=1).values)
+            # print("  max coords:", coords.max(dim=1).values.max(),
+            #       coords.max(dim=1).values.max(dim=1).values)
+            # print("  resolution:", resolution)
+
+            # fix layout
+            voxel_coords = coords.permute(0, 2, 1).contiguous()  # (B, N_occ, 3)
+            # clamp just in case
+            voxel_coords = voxel_coords.long().clamp(0, resolution - 1)
+
             outs = trilinear_devoxelize_cpu(
                 grid=grid,
                 coords=coords,
