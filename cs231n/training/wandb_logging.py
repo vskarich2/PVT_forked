@@ -14,7 +14,6 @@ class WandbMixin:
         """
 
         wandb.init(
-            entity="hajdukv",
             project="cs231n_final_project",
             name=self.checkpoint_folder,
             config={
