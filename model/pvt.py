@@ -112,11 +112,16 @@ class pvt(nn.Module):
         features = torch.cat(out_features_list, dim=1)
         if self.args.scanobject_compare:
             print("PVTConv 13")
+            print(features.shape)
 
         # 4) Fuse high-dimensional features down to 1024 channels
-        features = F.leaky_relu(self.conv_fuse(features))    # (B, 1024, N)
+        features = self.conv_fuse(features)
         if self.args.scanobject_compare:
             print("PVTConv 14")
+        features = F.leaky_relu(self.conv_fuse(features))    # (B, 1024, N)
+
+        if self.args.scanobject_compare:
+            print("PVTConv 15")
         # 5) Global pooling to get a per-cloud descriptor
         features = F.adaptive_max_pool1d(features, 1)  # (B, 1024, 1)
         features = features.view(B, -1)                # (B, 1024)
