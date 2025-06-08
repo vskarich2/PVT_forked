@@ -26,6 +26,8 @@ class SharedTransformer(nn.Module):
         
 
     def forward(self, inputs, rel_pos):
+        print("SharedTransformer inputs.shape:", inputs.shape)
+        print("conv1 weight.shape:", self.conv1.weight.shape)
         x = F.relu(self.bn1(self.conv1(inputs)))
         x1 = self.sa1(x, rel_pos)
         x = torch.cat((x, x1), dim=1)
