@@ -172,10 +172,11 @@ if __name__ == "__main__":
     elif args.conf_matrix and args.dataset == "scanobjectnn" and args.eval:
         print("Making confusion matrix for scanobject")
         trainer.make_confusion_matrix_for_scanobject()
-    elif args.scanobject_compare and args.eval:
+    elif args.scanobject_compare and args.dataset == "scanobjectnn" and args.eval:
         print("Running saliency map data logic for scanobject")
         trainer.test_compare_with_hooks()
     else:
+        print("Running stand-alone test!!")
         trainer.stand_alone_test()
 
     watcher.stop()

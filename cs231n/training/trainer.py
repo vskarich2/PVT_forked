@@ -91,7 +91,7 @@ class Trainer(
             if self.args.wandb:
                 wandb.log({
                     "train/TrainAvgLoss": train_avg_loss,
-                    "train/LearningRate": self.opt.param_groups[0]["lr"],
+                    "train/LearningRate": self.scheduler.get_last_lr()[0],
                     "epoch": epoch
                 })
     def stand_alone_test(self):
@@ -275,7 +275,7 @@ class Trainer(
             train_bar.set_postfix({
                 "Avg Loss": f"🔥{running_avg:.4f}🔥",
                 "Batch Loss": f"{curr_loss:.4f}",
-                "LR": f"{self.opt.param_groups[0]["lr"]}"
+                "LR": f"{self.scheduler.get_last_lr()[0]}"
             })
 
         # Close training bar for this epoch
