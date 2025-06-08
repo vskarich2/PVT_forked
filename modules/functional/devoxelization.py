@@ -17,12 +17,13 @@ class TrilinearDevoxelization(Function):
         :return:
             FloatTensor[B, C, N]
         """
+        is_training = is_training or scanobject_compare
         B, C = features.shape[:2]
         features = features.contiguous().view(B, C, -1)
         coords = coords.contiguous()
         outs, inds, wgts = _backend.trilinear_devoxelize_forward(resolution, is_training, coords, features)
 
-        if is_training or scanobject_compare:
+        if is_training:
             ctx.save_for_backward(inds, wgts)
             ctx.r = resolution
         return outs
