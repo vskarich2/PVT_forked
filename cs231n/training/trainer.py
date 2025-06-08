@@ -244,15 +244,32 @@ class Trainer(
             )
             plt.close(fig_cm)
 
-            # Mis‐classified examples
+            # 2) High-quality Mis‐classified examples
             imgs = []
-            for pc, t, p in mis_examples:
-                fig, ax = plt.subplots(subplot_kw={"projection": "3d"}, figsize=(3, 3))
-                ax.scatter(pc[:, 0], pc[:, 1], pc[:, 2], c="gray", s=2)
-                ax.set_title(f"T: {self.class_names[t]}\nP: {self.class_names[p]}", fontsize=8)
+            for pc, t, p, eid in mis_examples:
+                # Color by height (z) for more visual detail
+                colors = pc[:, 2]
+                fig = plt.figure(figsize=(4, 4), dpi=120)
+                ax = fig.add_subplot(111, projection='3d')
+                sc = ax.scatter(
+                    pc[:, 0], pc[:, 1], pc[:, 2],
+                    c=colors, cmap='viridis', s=12, alpha=0.9
+                )
+                ax.set_title(f"ID:{eid}  T:{self.class_names[t]} → P:{self.class_names[p]}", fontsize=10)
                 ax.axis("off")
+                plt.colorbar(sc, ax=ax, shrink=0.6, label="Height")
+                plt.tight_layout()
                 imgs.append(wandb.Image(fig))
                 plt.close(fig)
+            # # Mis‐classified examples
+            # imgs = []
+            # for pc, t, p in mis_examples:
+            #     fig, ax = plt.subplots(subplot_kw={"projection": "3d"}, figsize=(3, 3))
+            #     ax.scatter(pc[:, 0], pc[:, 1], pc[:, 2], c="gray", s=2)
+            #     ax.set_title(f"T: {self.class_names[t]}\nP: {self.class_names[p]}", fontsize=8)
+            #     ax.axis("off")
+            #     imgs.append(wandb.Image(fig))
+            #     plt.close(fig)
 
             wandb.log(
                 {f"Misclassifications/{self.args.dataset}": imgs},
@@ -421,13 +438,13 @@ class Trainer(
 
 
         gold = gold.to(pred.device)
-        gold = gold.contiguous().view(-1)
+        gold = gold.contiguous().reshape(-1)
 
         if smoothing:
             eps = 0.2
             n_class = pred.size(1)
 
-            one_hot = torch.zeros_like(pred).scatter(1, gold.view(-1, 1), 1)
+            one_hot = torch.zeros_like(pred).scatter(1, gold.reshape(-1, 1), 1)
             one_hot = one_hot * (1 - eps) + (1 - one_hot) * eps / (n_class - 1)
             log_prb = F.log_softmax(pred, dim=1)
 
