@@ -113,12 +113,13 @@ class pvt(nn.Module):
         if self.args.scanobject_compare:
             print("PVTConv 13")
             print(features.shape)
-
+        print(f"[PVT] before fuse: features.shape = {features.shape}, "
+              f"conv_fuse expects = {self.conv_fuse[0].in_channels}")
         # 4) Fuse high-dimensional features down to 1024 channels
         features = self.conv_fuse(features)
         if self.args.scanobject_compare:
             print("PVTConv 14")
-        features = F.leaky_relu(self.conv_fuse(features))    # (B, 1024, N)
+        features = F.leaky_relu(features)    # (B, 1024, N)
 
         if self.args.scanobject_compare:
             print("PVTConv 15")
