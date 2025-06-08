@@ -84,8 +84,10 @@ class pvt(nn.Module):
         #    Each block returns updated features and unchanged coords
         for block in self.point_features:
             features, _ = block((features, coords))  # features: (B, C_i, N)
-            print("PVTConv 9.5")
+            print("PVTConv 9.2")
             out_features_list.append(features)
+            print("PVTConv 9.5")
+
         if self.args.scanobject_compare:
             print("PVTConv 10")
 
