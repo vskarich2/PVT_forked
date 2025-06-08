@@ -107,7 +107,7 @@ class ConfusionMatrixMixin:
         if not wrong_examples:
             print("  (No misclassifications found!)")
 
-    def make_confusion_matrix_for_scanobject(self):
+    def make_confusion_matrix_for_scanobject(self, data=None):
 
         print("Generating Confusion Matrix....")
 

@@ -1,6 +1,6 @@
 import wandb
-
-
+import os
+os.environ["WANDB_API_KEY"] = "f2b2e46aacf58f9682c3ead0e09f6f4738421290"
 
 class WandbMixin:
     """
@@ -13,6 +13,7 @@ class WandbMixin:
         Initialize a W&B run using the project's hyperparameters.
         """
         wandb.init(
+            entity="hajdukv",
             project="cs231n_final_project",
             name=self.checkpoint_folder,
             config={

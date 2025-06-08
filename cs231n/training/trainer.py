@@ -1,9 +1,11 @@
 from __future__ import print_function
 
 import warnings
-
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
 import torch
 import wandb
+from matplotlib import pyplot as plt
 # ignore everything
 from tqdm.auto import tqdm, trange
 import torch.nn.functional as F
@@ -131,16 +133,13 @@ class Trainer(
             train_avg_loss,
             best_test_acc
     ):
-        # Use this method only for running test dataset during training
-        # If you want to run just a test epoch with no training, use the test
-
         test_loss = 0.0
         count = 0.0
         test_pred = []
         test_true = []
+        mis_examples = []  # will store up to 5 mis‐classified: (points, true_lbl, pred_lbl)
         self.model.eval()
 
-        # Inner test loop wrapped in tqdm
         test_bar = tqdm(
             self.test_loader,
             desc=f"Testing  (Epoch {epoch + 1}/{self.args.epochs})",
@@ -150,7 +149,6 @@ class Trainer(
         with torch.no_grad():
             for data, label in test_bar:
                 (feats, coords), label = self.preprocess_test_data(data, label)
-
                 feats = feats.to(self.device, non_blocking=True)
                 coords = coords.to(self.device, non_blocking=True)
                 label = label.to(self.device, non_blocking=True)
@@ -158,26 +156,72 @@ class Trainer(
                 logits = self.model(feats)
                 loss = self.criterion(logits, label)
                 test_loss += loss.item()
-                preds = logits.max(dim=1)[1]
+                preds = logits.argmax(dim=1)
+
                 count += 1.0
                 test_true.append(label.cpu().numpy())
-                test_pred.append(preds.detach().cpu().numpy())
+                test_pred.append(preds.cpu().numpy())
 
-                # Update test_bar with current average test loss
+                # collect mis‐classifications (up to 5 total)
+                if len(mis_examples) < 5:
+                    diff = (preds != label).nonzero(as_tuple=False).squeeze(1)
+                    for b in diff.tolist():
+                        if len(mis_examples) >= 5:
+                            break
+                        # coords[b]: (3, N_points) → transpose to (N_points,3)
+                        pc = coords[b].cpu().numpy().T
+                        mis_examples.append((pc, label[b].item(), preds[b].item()))
+
                 running_avg_loss = test_loss / count
                 test_bar.set_postfix(test_loss=running_avg_loss)
 
-        # Close test bar for this epoch
         test_bar.close()
 
-        # Compute confusion matrix
-        if self.args.conf_matrix:
-            if self.args.dataset == "modelnet40":
-                self.make_confusion_matrix_for_modelnet()
-            else:
-                self.make_confusion_matrix_for_scanobject()
+        # aggregate all predictions / truths
+        y_true = np.concatenate(test_true)
+        y_pred = np.concatenate(test_pred)
 
-        # Compute final metrics for epoch
+        # 1) Confusion Matrix + W&B logging
+        if self.args.conf_matrix:
+            cm = confusion_matrix(y_true, y_pred, normalize="true")
+            fig_cm, ax_cm = plt.subplots(figsize=(8, 6))
+            sns.heatmap(
+                cm, ax=ax_cm,
+                cmap="Blues", vmin=0, vmax=1,
+                xticklabels=self.class_names,
+                yticklabels=self.class_names,
+                cbar_kws={"label": "Recall"}
+            )
+            ax_cm.set_title(f"Epoch {epoch + 1} Confusion Matrix (Norm)")
+            ax_cm.set_xlabel("Predicted")
+            ax_cm.set_ylabel("True")
+            plt.xticks(rotation=90)
+            plt.yticks(rotation=0)
+            plt.tight_layout()
+
+            wandb.log(
+                {f"Confusion Matrix/{self.args.dataset}":
+                     wandb.Image(fig_cm, caption=f"Epoch {epoch + 1} CM")},
+                step=epoch
+            )
+            plt.close(fig_cm)
+
+            # 2) Mis‐classified examples
+            imgs = []
+            for pc, t, p in mis_examples:
+                fig, ax = plt.subplots(subplot_kw={"projection": "3d"}, figsize=(3, 3))
+                ax.scatter(pc[:, 0], pc[:, 1], pc[:, 2], c="gray", s=2)
+                ax.set_title(f"T: {self.class_names[t]}\nP: {self.class_names[p]}", fontsize=8)
+                ax.axis("off")
+                imgs.append(wandb.Image(fig))
+                plt.close(fig)
+
+            wandb.log(
+                {f"Misclassifications/{self.args.dataset}": imgs},
+                step=epoch
+            )
+
+        # 3) Compute scalar metrics and return
         test_acc = self.check_stats(
             count,
             epoch,
