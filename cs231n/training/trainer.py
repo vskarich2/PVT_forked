@@ -238,9 +238,11 @@ class Trainer(
             plt.tight_layout()
 
             wandb.log(
-                {f"Confusion Matrix/{self.args.dataset}":
-                     wandb.Image(fig_cm, caption=f"Epoch {epoch + 1} CM")},
-                step=epoch
+                {
+                    f"Confusion Matrix/{self.args.dataset}":
+                     wandb.Image(fig_cm, caption=f"Epoch {epoch + 1} CM"),
+                    "epoch": epoch
+                }
             )
             plt.close(fig_cm)
 
@@ -273,8 +275,10 @@ class Trainer(
             #     plt.close(fig)
 
             wandb.log(
-                {f"Misclassifications/{self.args.dataset}": imgs},
-                step=epoch
+                {
+                    f"Misclassifications/{self.args.dataset}": imgs,
+                    "epoch": epoch
+                }
             )
 
         # Compute scalar metrics and return
