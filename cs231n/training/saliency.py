@@ -137,37 +137,39 @@ class SaliencyMixin(VoxelGridCentersMixin):
 
             # ─── Per-sample backward & saliency extraction ───
             for i in range(B):
-                print(f"  [Batch {batch_idx}, Sample {i}] ── Begin backward")
+                print(f"  [Batch {batch_idx}, Sample {i}] ── Begin single-sample pass")
+
+                # 1) Clear previous hooks and gradients
                 self.model.zero_grad()
                 self.model._attn_acts.clear()
                 self.model._attn_grads.clear()
 
-                scalar_logit = logits[i, preds[i]]
-                print(f"  [Batch {batch_idx}, Sample {i}]   scalar_logit.shape: {scalar_logit.shape}  # scalar")
+                # 2) Isolate one sample and re-run forward from scratch
+                feat_i = feats[i:i + 1].detach().requires_grad_(True)  # (1, C_in, N)
+                coord_i = coords[i:i + 1]  # (1, 3, N)
+                out_i = self.model((feat_i, coord_i))  # (1, num_classes)
+                pred_i = out_i.argmax(dim=1).item()  # scalar prediction
+                print(f"  [Batch {batch_idx}, Sample {i}]   pred_i={pred_i}")
 
-                try:
-                    scalar_logit.backward(retain_graph=True)
-                except Exception as e:
-                    print(f"Caught error: {e}")
+                # 3) Select the scalar logit and backward _once_
+                scalar_logit = out_i[0, pred_i]  # shape []
+                print(f"  [Batch {batch_idx}, Sample {i}]   logit shape {scalar_logit.shape}")
+                scalar_logit.backward()  # no retain_graph
+                print(f"  [Batch {batch_idx}, Sample {i}]   backward complete")
 
-                print(f"  [Batch {batch_idx}, Sample {i}]   backward done")
+                # 4) Extract activations & gradients from hooks
+                # Each hook list now has one entry per stage, each of shape (1, V_occ, C_stage)
+                a1 = self.model._attn_acts[0][0].cpu()  # (V_occ0, C1)
+                g1 = self.model._attn_grads[0][0].cpu()  # (V_occ0, C1)
+                print(f"    Stage0: a1 {a1.shape}, g1 {g1.shape}")
 
-                # Grab activations & grads
-                a1 = self.model._attn_acts[0][i].cpu()
-                g1 = self.model._attn_grads[0][i].cpu()
-                print(f"  [Batch {batch_idx}, Sample {i}]   a1.shape={a1.shape}  # (V_occ0, C1)")
-                print(f"  [Batch {batch_idx}, Sample {i}]   g1.shape={g1.shape}  # (V_occ0, C1)")
+                a2 = self.model._attn_acts[1][0].cpu()  # (V_occ1, C2)
+                g2 = self.model._attn_grads[1][0].cpu()  # (V_occ1, C2)
+                print(f"    Stage1: a2 {a2.shape}, g2 {g2.shape}")
 
-                a2 = self.model._attn_acts[1][i].cpu()
-                g2 = self.model._attn_grads[1][i].cpu()
-                print(f"  [Batch {batch_idx}, Sample {i}]   a2.shape={a2.shape}  # (V_occ1, C2)")
-                print(f"  [Batch {batch_idx}, Sample {i}]   g2.shape={g2.shape}  # (V_occ1, C2)")
-
-                a3 = self.model._attn_acts[2][i].cpu()
-                g3 = self.model._attn_grads[2][i].cpu()
-                print(f"  [Batch {batch_idx}, Sample {i}]   a3.shape={a3.shape}  # (V_occ2, C3)")
-                print(f"  [Batch {batch_idx}, Sample {i}]   g3.shape={g3.shape}  # (V_occ2, C3)")
-
+                a3 = self.model._attn_acts[2][0].cpu()  # (V_occ2, C3)
+                g3 = self.model._attn_grads[2][0].cpu()  # (V_occ2, C3)
+                print(f"    Stage2: a3 {a3.shape}, g3 {g3.shape}")
                 # compute non-empty masks
                 for stage in range(3):
                     vox_feats = self._last_voxel_feats[stage][i].unsqueeze(0)
