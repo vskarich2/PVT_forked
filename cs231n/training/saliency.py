@@ -48,14 +48,15 @@ class SaliencyMixin(VoxelGridCentersMixin):
             # `module` is the SparseDynamicVoxelAttention instance;
             # `out` is its forward result (a list of length B, each of shape [Vʼ, D]).
             # Normalize to a list of tensors
-            if isinstance(out, torch.Tensor):
-                outs = [out]
-            else:
-                outs = list(out)
-
-            # Detach and store each tensor
-            for t in outs:
-                self.model._attn_acts.append(t.detach().cpu())
+            # if isinstance(out, torch.Tensor):
+            #     outs = [out]
+            # else:
+            #     outs = list(out)
+            #
+            # # Detach and store each tensor
+            # for t in outs:
+            #     self.model._attn_acts.append(t.detach().cpu())
+            pass
 
         def _backward_hook(module, grad_in, grad_out):
             # `grad_out[0]` is the gradient of the loss w.r.t. that module’s output.
