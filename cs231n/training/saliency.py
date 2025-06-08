@@ -146,8 +146,7 @@ class SaliencyMixin(VoxelGridCentersMixin):
 
                 # 2) Isolate one sample and re-run forward from scratch
                 feat_i = feats[i:i + 1].detach().requires_grad_(True)  # (1, C_in, N)
-                coord_i = coords[i:i + 1]  # (1, 3, N)
-                out_i = self.model((feat_i, coord_i))  # (1, num_classes)
+                out_i  = self.model(feat_i)  
                 pred_i = out_i.argmax(dim=1).item()  # scalar prediction
                 print(f"  [Batch {batch_idx}, Sample {i}]   pred_i={pred_i}")
 
