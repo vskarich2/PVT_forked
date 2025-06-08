@@ -255,6 +255,7 @@ class Trainer(
                     pc[:, 0], pc[:, 1], pc[:, 2],
                     c=colors, cmap='viridis', s=12, alpha=0.9
                 )
+                eid = "Need ID"
                 ax.set_title(f"ID:{eid}  T:{self.class_names[t]} → P:{self.class_names[p]}", fontsize=10)
                 ax.axis("off")
                 plt.colorbar(sc, ax=ax, shrink=0.6, label="Height")
