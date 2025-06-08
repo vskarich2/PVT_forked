@@ -45,6 +45,33 @@ class Trainer(
         self.device = torch.device(self.args.device)
         self.model = self.load_model(self.device)
 
+        self.class_names_modelnet = [
+            "airplane", "bathtub", "bed", "bench", "bookshelf", "bottle", "bowl", "car",
+            "chair", "cone", "cup", "curtain", "desk", "door", "dresser", "flower_pot",
+            "glass_box", "guitar", "keyboard", "lamp", "laptop", "mantel", "monitor",
+            "night_stand", "person", "piano", "plant", "radio", "range_hood", "sink",
+            "sofa", "stairs", "stool", "table", "tent", "toilet", "tv_stand", "vase",
+            "wardrobe", "xbox"
+        ]
+        self.class_names_scanobject = [
+                                "bag",
+                                "bin",
+                                "box",
+                                "cabinet",
+                                "chair",
+                                "desk",
+                                "display",
+                                "door",
+                                "shelf",
+                                "table",
+                                "bed",
+                                "pillow",
+                                "sink",
+                                "sofa",
+                                "toilet"
+                             ]
+        self.class_names = self.class_names_modelnet if args.data.dataset == "modelnet40" else self.class_names_scanobject
+
         if self.args.scanobject_compare:
             print("Registering hooks for saliency gradients!!")
             self.register_saliency_hooks()
