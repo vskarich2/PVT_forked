@@ -45,25 +45,27 @@ class SaliencyMixin(VoxelGridCentersMixin):
 
         # (C) Define hook functions:
         def _forward_hook(module, inp, out):
-            # `module` is the SparseDynamicVoxelAttention instance;
-            # `out` is its forward result (a list of length B, each of shape [Vʼ, D]).
-            # Normalize to a list of tensors
-            if isinstance(out, torch.Tensor):
-                outs = [out]
-            else:
-                outs = list(out)
-
-            # Detach and store each tensor
-            for t in outs:
-                self.model._attn_acts.append(t.detach().cpu())
+            # # `module` is the SparseDynamicVoxelAttention instance;
+            # # `out` is its forward result (a list of length B, each of shape [Vʼ, D]).
+            # # Normalize to a list of tensors
+            # if isinstance(out, torch.Tensor):
+            #     outs = [out]
+            # else:
+            #     outs = list(out)
+            #
+            # # Detach and store each tensor
+            # for t in outs:
+            #     self.model._attn_acts.append(t.detach().cpu())
+            pass
 
 
         def _backward_hook(module, grad_in, grad_out):
             # `grad_out[0]` is the gradient of the loss w.r.t. that module’s output.
-            print("_backward_hook before")
-            print(grad_out.shape)
-            self.model._attn_grads.append(grad_out[0].detach().cpu())
-            print("_backward_hook after")
+            # print("_backward_hook before")
+            # print(grad_out.shape)
+            # self.model._attn_grads.append(grad_out[0].detach().cpu())
+            # print("_backward_hook after")
+            pass
 
         # (D) Walk through the model, find every SparseDynamicVoxelAttention, and register:
         for name, submod in self.model.named_modules():
