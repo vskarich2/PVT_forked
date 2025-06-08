@@ -22,7 +22,7 @@ torch.backends.cudnn.benchmark = True
 warnings.filterwarnings("ignore")
 import os
 import torch.optim as optim
-from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR, LinearLR, SequentialLR
 from model.pvt import pvt
 import numpy as np
 import sklearn.metrics as metrics
@@ -332,18 +332,19 @@ class Trainer(
         if self.args.use_sgd:
             if not self.args.eval:
                 print("Using SGD")
-            opt = optim.SGD(
+
+            optimizer = optim.SGD(
                 model.parameters(),
                 lr=self.args.lr * 10,
                 momentum=self.args.momentum,
                 weight_decay=self.args.weight_decay
             )
-            scheduler = CosineAnnealingLR(opt, self.args.epochs, eta_min=self.args.lr)
+            scheduler = CosineAnnealingLR(optimizer, self.args.epochs, eta_min=self.args.lr)
         else:
             if not self.args.eval:
-                print("Using AdamW")
+                print("Using AdamW with 10 epoch warm up followed by CosineAnnealingLR.")
 
-            opt = torch.optim.AdamW(
+            optimizer = torch.optim.AdamW(
                 model.parameters(),
                 lr=self.args.lr,
                 weight_decay=self.args.weight_decay
@@ -352,17 +353,29 @@ class Trainer(
             warmup_epochs = 10
             total_epochs = 200
 
-            def lr_fn(epoch):
-                if epoch < warmup_epochs:
-                    # linear warmup: 0 → 1 over warmup_epochs
-                    return float(epoch) / float(max(1, warmup_epochs))
-                # cosine anneal: 1 → 0 over [warmup_epochs, total_epochs)
-                progress = float(epoch - warmup_epochs) / float(max(1, total_epochs - warmup_epochs))
-                return 0.5 * (1.0 + math.cos(math.pi * progress))
+            # 1) Warmup from 0 → 1×LR over first warmup_epochs
+            warmup_sched = LinearLR(
+                optimizer,
+                start_factor=0.0,
+                end_factor=1.0,
+                total_iters=warmup_epochs
+            )
 
-            scheduler = LambdaLR(opt, lr_lambda=lr_fn)
+            # 2) Cosine anneal from 1×LR → η_min over the rest
+            cosine_sched = CosineAnnealingLR(
+                optimizer,
+                T_max=total_epochs - warmup_epochs,
+                eta_min=1e-5
+            )
 
-        return opt, scheduler
+            # 3) Chain them together
+            scheduler = SequentialLR(
+                optimizer,
+                schedulers=[warmup_sched, cosine_sched],
+                milestones=[warmup_epochs]
+            )
+
+        return optimizer, scheduler
 
     def cal_loss(self, pred, gold, smoothing=True):
         ''' Calculate cross entropy loss, apply label smoothing if needed. '''
