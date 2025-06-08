@@ -152,7 +152,8 @@ class PVTConv(nn.Module):
         # a) Rearrange coordinates to (B, N, 3) for pairwise difference computation.
         #    The original 'coords' are (B, 3, N).
         pos = coords.permute(0, 2, 1) # Shape: (B, N, 3)
-
+        if self.args.scanobject_compare:
+            print("PVTConv 7")
         # b) Compute pairwise relative positions.
         #    This calculates the vector difference between all pairs of points within a batch.
         #    - pos[:, :, None, :] is (B, N, 1, 3)
@@ -168,6 +169,8 @@ class PVTConv(nn.Module):
         # This path directly processes the point cloud, often using self-attention
         # that can leverage the relative positional information.
         # The output 'point_out' has shape (B, C_out, N).
+        if self.args.scanobject_compare:
+            print("PVTConv 8")
         point_out = self.point_features(features, rel_pos)
 
         # -------------------------------
@@ -182,6 +185,8 @@ class PVTConv(nn.Module):
             fused_features = voxel_features
         else:
             fused_features = voxel_features + point_out
+        if self.args.scanobject_compare:
+            print("PVTConv 9")
         # Return the fused per-point features and the original (unchanged) coordinates.
         return fused_features, coords
 
