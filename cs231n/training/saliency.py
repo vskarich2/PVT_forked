@@ -26,9 +26,11 @@ class SaliencyMixin(VoxelGridCentersMixin):
                 This hook is invoked right after the i-th PVTConv’s Voxelization.forward(...)
                 ‘out’ is (avg_voxel_features, norm_coords). We only need index 0 of that tuple.
                 """
+                print("GOT HERE _voxel_hook 1")
                 self._last_voxel_feats[i] = out[0]  # store [B, C_voxel, R, R, R]
                 self._last_voxel_coords[i] = out[1]  # store [B, 3, N_pts]
 
+                print("GOT HERE _voxel_hook 2")
             return _voxel_hook
 
         # (C) Attach one hook to each PVTConv.voxelization.  We loop over i = 0..2:
