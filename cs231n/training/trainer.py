@@ -89,9 +89,10 @@ class Trainer(
                 self.save_new_checkpoint(epoch, test_acc)
 
             if self.args.wandb:
+                lr = self.scheduler.get_last_lr()[0]
                 wandb.log({
                     "train/TrainAvgLoss": train_avg_loss,
-                    "train/LearningRate": self.scheduler.get_last_lr()[0],
+                    "train/LearningRate": f"{lr:.4f}",
                     "epoch": epoch
                 })
     def stand_alone_test(self):
@@ -272,10 +273,11 @@ class Trainer(
             running_count += 1.0
             running_avg = running_loss / running_count
 
+            lr = self.scheduler.get_last_lr()[0]
             train_bar.set_postfix({
                 "Avg Loss": f"🔥{running_avg:.4f}🔥",
                 "Batch Loss": f"{curr_loss:.4f}",
-                "LR": f"{self.scheduler.get_last_lr()[0]}"
+                "LR": f"{lr:.4f}"
             })
 
         # Close training bar for this epoch
