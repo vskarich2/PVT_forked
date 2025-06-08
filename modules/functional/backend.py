@@ -40,7 +40,7 @@ except Exception as e:
             # print("  max coords:", coords.max(dim=1).values.max(),
             #       coords.max(dim=1).values.max(dim=1).values)
             # print("  resolution:", resolution)
-            
+
             # # fix layout
             # voxel_coords = coords.permute(0, 2, 1).contiguous()  # (B, N_occ, 3)
             # # clamp just in case
