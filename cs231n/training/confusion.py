@@ -94,6 +94,7 @@ class ConfusionMatrixMixin:
                 print(outstr)
 
                 # Plot confusion matrix
+                print("Calculating Confusion Matrix...")
                 cm = confusion_matrix(all_labels, all_preds, labels=list(range(40)))
                 plot_confusion_matrix(cm, class_names)
                 plt.savefig("modelnet40_confusion_matrix.png", dpi=300)
@@ -180,7 +181,7 @@ class ConfusionMatrixMixin:
                 # Plot confusion matrix
                 cm = confusion_matrix(all_labels, all_preds, labels=list(range(15)))
                 plot_confusion_matrix(cm, class_names)
-                plt.savefig("modelnet40_confusion_matrix.png", dpi=300)
+                plt.savefig("scanobjectnn_confusion_matrix.png", dpi=300)
                 plt.show()
 
         # After looping through all batches, print up to 5 misclassified examples
@@ -227,5 +228,6 @@ class ConfusionMatrixMixin:
         all_preds = np.concatenate(all_preds, axis=0)   # shape [num_samples]
         all_labels = np.concatenate(all_labels, axis=0) # shape [num_samples]
 
-        cm = confusion_matrix(all_labels, all_preds, labels=list(range(num_classes)))
+        cm = confusion_matrix(y_true=all_labels, y_pred=all_preds, labels=list(range(num_classes)))
+
         return cm

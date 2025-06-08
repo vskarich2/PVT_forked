@@ -170,6 +170,13 @@ class Trainer(
         # Close test bar for this epoch
         test_bar.close()
 
+        # Compute confusion matrix
+        if self.args.conf_matrix:
+            if self.args.dataset == "modelnet40":
+                self.make_confusion_matrix_for_modelnet()
+            else:
+                self.make_confusion_matrix_for_scanobject()
+
         # Compute final metrics for epoch
         test_acc = self.check_stats(
             count,

@@ -166,13 +166,13 @@ if __name__ == "__main__":
 
     if not args.eval:
         trainer.fit()
-    elif args.conf_matrix and args.dataset == "modelnet40":
+    elif args.conf_matrix and args.dataset == "modelnet40" and args.eval:
         print("Making confusion matrix for modelnet40")
         trainer.make_confusion_matrix_for_modelnet()
-    elif args.conf_matrix and args.dataset == "scanobjectnn":
+    elif args.conf_matrix and args.dataset == "scanobjectnn" and args.eval:
         print("Making confusion matrix for scanobject")
         trainer.make_confusion_matrix_for_scanobject()
-    elif args.scanobject_compare:
+    elif args.scanobject_compare and args.eval:
         print("Running saliency map data logic for scanobject")
         trainer.test_compare_with_hooks()
     else:
