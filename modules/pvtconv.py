@@ -136,6 +136,15 @@ class PVTConv(nn.Module):
         #    The output is per-point features of shape (B, C_voxel, N).
         if self.args.scanobject_compare:
             print("PVTConv 5")
+
+        print(
+            "DEV: voxel_coords:",
+            voxel_coords.shape,
+            voxel_coords.dtype,
+            voxel_coords.min().item(),
+            voxel_coords.max().item(),
+            "should be int in [0, R-1]."
+        )
         voxel_features = F.trilinear_devoxelize(
             voxel_features,
             voxel_coords,
