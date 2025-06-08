@@ -85,6 +85,8 @@ class pvt(nn.Module):
         for block in self.point_features:
             features, _ = block((features, coords))  # features: (B, C_i, N)
             out_features_list.append(features)
+        if self.args.scanobject_compare:
+            print("PVTConv 10")
 
         # 2) Append per-point max and mean statistics
         #    a) Max over channel dim -> shape (B, C_last, 1) -> repeat to (B, C_last, N)
@@ -103,7 +105,8 @@ class pvt(nn.Module):
 
         # 4) Fuse high-dimensional features down to 1024 channels
         features = F.leaky_relu(self.conv_fuse(features))    # (B, 1024, N)
-
+        if self.args.scanobject_compare:
+            print("PVTConv 11")
         # 5) Global pooling to get a per-cloud descriptor
         features = F.adaptive_max_pool1d(features, 1)  # (B, 1024, 1)
         features = features.view(B, -1)                # (B, 1024)
