@@ -22,6 +22,10 @@ class WandbMixin:
                 "epochs": self.args.epochs
             }
         )
+        
+        # tell W&B that any key under "confusion_matrix/.*" will use "epoch" as its x-axis
+        wandb.define_metric("confusion_matrix/*", step_metric="epoch")
+        wandb.define_metric("misclassifications/*", step_metric="epoch")
 
         # This logs weights and gradients every epoch
         wandb.watch(self.model, log="all", log_freq=1)
