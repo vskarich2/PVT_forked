@@ -148,7 +148,13 @@ class Trainer(
             unit="batch"
         )
         with torch.no_grad():
-            for data, label in test_bar:
+
+            for data, label, *maybe_class_name in test_bar:
+                if maybe_class_name:
+                    class_name = maybe_class_name[0]
+                else:
+                    class_name = "NONE"
+
                 (feats, coords), label = self.preprocess_test_data(data, label)
                 feats = feats.to(self.device, non_blocking=True)
                 coords = coords.to(self.device, non_blocking=True)
