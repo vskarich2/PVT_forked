@@ -1,6 +1,4 @@
 import wandb
-import os
-os.environ["WANDB_API_KEY"] = "f2b2e46aacf58f9682c3ead0e09f6f4738421290"
 
 class WandbMixin:
     """
