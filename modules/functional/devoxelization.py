@@ -7,7 +7,7 @@ __all__ = ['trilinear_devoxelize']
 
 class TrilinearDevoxelization(Function):
     @staticmethod
-    def forward(ctx, features, coords, resolution, is_training=True):
+    def forward(ctx, features, coords, resolution, is_training=True, scanobject_compare=False):
         """
         :param ctx:
         :param coords: the coordinates of points, FloatTensor[B, 3, N]
@@ -22,7 +22,7 @@ class TrilinearDevoxelization(Function):
         coords = coords.contiguous()
         outs, inds, wgts = _backend.trilinear_devoxelize_forward(resolution, is_training, coords, features)
 
-        if is_training:
+        if is_training or scanobject_compare:
             ctx.save_for_backward(inds, wgts)
             ctx.r = resolution
         return outs

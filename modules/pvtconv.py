@@ -128,7 +128,14 @@ class PVTConv(nn.Module):
         #    to perform trilinear interpolation, effectively sampling features from the continuous
         #    voxel grid at the exact locations of the original points.
         #    The output is per-point features of shape (B, C_voxel, N).
-        voxel_features = F.trilinear_devoxelize(voxel_features, voxel_coords, self.resolution, self.training)
+
+        voxel_features = F.trilinear_devoxelize(
+            voxel_features,
+            voxel_coords,
+            self.resolution,
+            self.training,
+            self.args.scanobject_compare
+        )
 
         # -------------------------------
         # 2) Point path: Pure point-cloud self-attention
