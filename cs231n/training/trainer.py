@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import math
 import warnings
 import seaborn as sns
 from sklearn.metrics import confusion_matrix
@@ -21,7 +22,7 @@ torch.backends.cudnn.benchmark = True
 warnings.filterwarnings("ignore")
 import os
 import torch.optim as optim
-from torch.optim.lr_scheduler import CosineAnnealingLR
+from torch.optim.lr_scheduler import CosineAnnealingLR, LambdaLR
 from model.pvt import pvt
 import numpy as np
 import sklearn.metrics as metrics
@@ -49,8 +50,7 @@ class Trainer(
             self.register_saliency_hooks()
             self.register_voxelization_hooks()
 
-        self.opt = self.set_optimizer(self.model)
-        self.scheduler = CosineAnnealingLR(self.opt, self.args.epochs, eta_min=self.args.lr)
+        self.opt, self.scheduler = self.get_optimizer_and_scheduler(self.model)
         self.criterion = self.cal_loss
         self.checkpoint_folder = self.create_checkpoint_folder_name()
 
@@ -328,7 +328,7 @@ class Trainer(
 
         return model
 
-    def set_optimizer(self, model):
+    def get_optimizer_and_scheduler(self, model):
         if self.args.use_sgd:
             if not self.args.eval:
                 print("Using SGD")
@@ -338,15 +338,31 @@ class Trainer(
                 momentum=self.args.momentum,
                 weight_decay=self.args.weight_decay
             )
+            scheduler = CosineAnnealingLR(opt, self.args.epochs, eta_min=self.args.lr)
         else:
             if not self.args.eval:
                 print("Using AdamW")
-            opt = optim.AdamW(
+
+            opt = torch.optim.AdamW(
                 model.parameters(),
                 lr=self.args.lr,
                 weight_decay=self.args.weight_decay
             )
-        return opt
+
+            warmup_epochs = 10
+            total_epochs = 200
+
+            def lr_fn(epoch):
+                if epoch < warmup_epochs:
+                    # linear warmup: 0 → 1 over warmup_epochs
+                    return float(epoch) / float(max(1, warmup_epochs))
+                # cosine anneal: 1 → 0 over [warmup_epochs, total_epochs)
+                progress = float(epoch - warmup_epochs) / float(max(1, total_epochs - warmup_epochs))
+                return 0.5 * (1.0 + math.cos(math.pi * progress))
+
+            scheduler = LambdaLR(opt, lr_lambda=lr_fn)
+
+        return opt, scheduler
 
     def cal_loss(self, pred, gold, smoothing=True):
         ''' Calculate cross entropy loss, apply label smoothing if needed. '''
