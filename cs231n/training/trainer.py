@@ -177,12 +177,16 @@ class Trainer(
 
         test_bar.close()
 
-        # aggregate all predictions / truths
-        y_true = np.concatenate(test_true)
-        y_pred = np.concatenate(test_pred)
 
-        # 1) Confusion Matrix + W&B logging
+
+
+        # Confusion Matrix + W&B logging
         if self.args.conf_matrix:
+
+            # aggregate all predictions / truths
+            y_true = np.concatenate(test_true)
+            y_pred = np.concatenate(test_pred)
+
             cm = confusion_matrix(y_true, y_pred, normalize="true")
             fig_cm, ax_cm = plt.subplots(figsize=(8, 6))
             sns.heatmap(
@@ -206,7 +210,7 @@ class Trainer(
             )
             plt.close(fig_cm)
 
-            # 2) Mis‐classified examples
+            # Mis‐classified examples
             imgs = []
             for pc, t, p in mis_examples:
                 fig, ax = plt.subplots(subplot_kw={"projection": "3d"}, figsize=(3, 3))
@@ -221,7 +225,7 @@ class Trainer(
                 step=epoch
             )
 
-        # 3) Compute scalar metrics and return
+        # Compute scalar metrics and return
         test_acc = self.check_stats(
             count,
             epoch,
