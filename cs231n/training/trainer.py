@@ -44,7 +44,7 @@ class Trainer(
         self.io = io
         self.device = torch.device(self.args.device)
         self.model = self.load_model(self.device)
-
+        print(f"Using device: {self.args.device}")
         self.class_names_modelnet = [
             "airplane", "bathtub", "bed", "bench", "bookshelf", "bottle", "bowl", "car",
             "chair", "cone", "cup", "curtain", "desk", "door", "dresser", "flower_pot",
