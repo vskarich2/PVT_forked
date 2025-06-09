@@ -237,7 +237,7 @@ class SaliencyMixin(VoxelGridCentersMixin):
           'coords0','feat0','grad0',
           'coords1','feat1','grad1',
           'coords2','feat2','grad2',
-          'pointcloud'=Nx3 raw points (optional),
+          'pointcloud'=N×D raw points (optional),
         compute per‐voxel saliency = sum(|feat*grad|) and
         plot 3 side‐by‐side 3D scatterplots:
           • Voxels colored by normalized saliency
@@ -253,12 +253,19 @@ class SaliencyMixin(VoxelGridCentersMixin):
             c = item[f"coords{stage}"]
             if torch.is_tensor(c):
                 c = c.cpu().numpy()
-            all_xyz.append(c)
+            all_xyz.append(c)               # (V_stage, 3)
+
+        # Extract and slice pointcloud to XYZ only
         if "pointcloud" in item:
             pts = item["pointcloud"]
             if torch.is_tensor(pts):
                 pts = pts.cpu().numpy()
+            # if extra channels (normals, etc.), keep only first 3 columns
+            if pts.ndim == 2 and pts.shape[1] > 3:
+                pts = pts[:, :3]
             all_xyz.append(pts)
+
+        # concatenate for global bounds
         all_xyz = np.concatenate(all_xyz, axis=0)
         xyz_min, xyz_max = all_xyz.min(axis=0), all_xyz.max(axis=0)
 
@@ -271,12 +278,11 @@ class SaliencyMixin(VoxelGridCentersMixin):
             if torch.is_tensor(coords):
                 coords = coords.cpu().numpy()
 
-            # compute saliency
-            feat = item[f"feat{stage}"]
+            # compute saliency\m            feat = item[f"feat{stage}"]
             grad = item[f"grad{stage}"]
-            if not isinstance(feat, torch.Tensor):
+            if not torch.is_tensor(feat):
                 feat = torch.as_tensor(feat)
-            if not isinstance(grad, torch.Tensor):
+            if not torch.is_tensor(grad):
                 grad = torch.as_tensor(grad)
 
             # sum |feat * grad| per voxel
@@ -295,8 +301,13 @@ class SaliencyMixin(VoxelGridCentersMixin):
                 edgecolor="none"
             )
 
-            # overlay raw points
+            # overlay raw points (XYZ only)
             if "pointcloud" in item:
+                pts = item["pointcloud"]
+                if torch.is_tensor(pts):
+                    pts = pts.cpu().numpy()
+                if pts.ndim == 2 and pts.shape[1] > 3:
+                    pts = pts[:, :3]
                 ax.scatter(
                     pts[:, 0], pts[:, 1], pts[:, 2],
                     c=point_color,
@@ -305,9 +316,7 @@ class SaliencyMixin(VoxelGridCentersMixin):
                 )
 
             ax.set_title(f"Stage {stage}", fontsize=14)
-            ax.set_xlabel("X");
-            ax.set_ylabel("Y");
-            ax.set_zlabel("Z")
+            ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
             ax.set_xlim(xyz_min[0], xyz_max[0])
             ax.set_ylim(xyz_min[1], xyz_max[1])
             ax.set_zlim(xyz_min[2], xyz_max[2])
@@ -324,3 +333,4 @@ class SaliencyMixin(VoxelGridCentersMixin):
             fontsize=16)
         plt.tight_layout(rect=[0, 0, 0.95, 0.92])
         plt.show()
+
