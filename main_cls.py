@@ -138,6 +138,7 @@ if __name__ == "__main__":
     parser.add_argument('--eight_heads', action='store_true', help='8 heads for coarse attention')
 
     parser.add_argument('--large_attn', action='store_true', help='Use window attention')
+    parser.add_argument('--stand_alone_test_epoch', action='store_true', help='Run one test epoch')
 
     parser.add_argument('--scanobject_compare', action='store_true', help='Use window attention')
 
@@ -172,6 +173,8 @@ if __name__ == "__main__":
 
     if not args.eval:
         trainer.fit()
+    elif args.stand_alone_test_epoch:
+        trainer.stand_alone_test()
     elif args.conf_matrix and args.dataset == "modelnet40" and args.eval:
         print("Making confusion matrix for modelnet40")
         trainer.make_confusion_matrix_for_modelnet()
