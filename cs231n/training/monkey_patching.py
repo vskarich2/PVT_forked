@@ -1,3 +1,6 @@
+import traceback
+
+
 def patch_tensor_ops_for_contiguity():
     import torch
 
@@ -23,6 +26,8 @@ def patch_tensor_ops_for_contiguity():
     # Patched view
     def patched_view(self, *shape):
         if not self.is_contiguous():
+            print("Non-contiguous view() called—stack trace:")
+            traceback.print_stack()
             return self.contiguous().view(*shape)
         return original_view(self, *shape)
 
