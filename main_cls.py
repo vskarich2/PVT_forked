@@ -3,9 +3,12 @@ from __future__ import print_function
 import sys
 import torch
 
+from cs231n.training.monkey_patching import patch_tensor_ops_for_contiguity
+
 if sys.platform == 'darwin': # OSX
     # TURN OFF IN PROD, SLOWS EVERYTHING DOWN
     torch.autograd.set_detect_anomaly(True)
+    patch_tensor_ops_for_contiguity()
 
 import warnings
 
