@@ -209,7 +209,7 @@ class Trainer(
             })
 
         # Log gradient and param stats
-        if self.args.wandb:
+        #if self.args.wandb:
             #self.log_gradient_and_param_statistics(epoch=epoch)
 
         # Close training bar for this epoch
