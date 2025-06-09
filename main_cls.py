@@ -1,16 +1,19 @@
 from __future__ import print_function
 
 import sys
+import torch
+
+if sys.platform == 'darwin': # OSX
+    # TURN OFF IN PROD, SLOWS EVERYTHING DOWN
+    torch.autograd.set_detect_anomaly(True)
+
 import warnings
 
-import torch
 
 from cs231n.training.trainer import Trainer
 from dynamic_config import ConfigWatcher
 
 # This enables verbose mode for error messages in torch.
-# TURN OFF IN PROD, SLOWS EVERYTHING DOWN
-# torch.autograd.set_detect_anomaly(True)
 
 # ignore everything
 warnings.filterwarnings("ignore")
