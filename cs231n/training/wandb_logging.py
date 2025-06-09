@@ -25,3 +25,12 @@ class WandbMixin:
 
         # This logs weights and gradients every epoch
         wandb.watch(self.model, log="all", log_freq=1)
+
+        # create one Table for per-class stats across all epochs
+        self.per_class_table = wandb.Table(columns=["epoch", "class", "accuracy", "num_samples"])
+        # tell W&B that anything under “Per-Class Accuracy” uses the ‘epoch’ column as its x-axis
+        wandb.define_metric("Per-Class Accuracy/*", step_metric="epoch")
+
+
+
+

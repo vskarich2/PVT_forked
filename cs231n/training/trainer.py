@@ -269,25 +269,26 @@ class Trainer(
             accuracy_by_class = correct_by_class / (total_by_class + 1e-8)
             accuracy_by_class = np.round(accuracy_by_class, 4)
 
-            df_class_metrics = pd.DataFrame({
-                "class": self.class_names,
-                "accuracy": accuracy_by_class,
-                "num_samples": total_by_class.astype(int)
-            })
+            # ───────── new code ─────────
+            # append one row per class into the persistent table
+            for cls_idx, cls_name in enumerate(self.class_names):
+                self.per_class_table.add_data(
+                    epoch,
+                    cls_name,
+                    float(accuracy_by_class[cls_idx]),
+                    int(total_by_class[cls_idx])
+                )
 
-            # Sort by accuracy (ascending)
-            df_class_metrics = df_class_metrics.sort_values(by="accuracy", ascending=True)
-
-            wandb_table = wandb.Table(dataframe=df_class_metrics)
-
+            # log the updated table once
             wandb.log({
+                "epoch": epoch,
                 "Per-Class Accuracy": wandb.plot_table(
                     "wandb/bar/v1",
-                    wandb_table,
+                    self.per_class_table,
                     {"x": "class", "y": "accuracy", "extra": ["num_samples"]}
-                ),
-                "epoch": epoch
+                )
             })
+            # ─────────────────────────────
 
         # Final scalar metrics
         test_acc = self.check_stats(
