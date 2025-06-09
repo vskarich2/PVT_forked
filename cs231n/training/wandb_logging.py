@@ -11,10 +11,11 @@ class WandbMixin:
 
     def log_saliency(self, epoch):
         saliency_examples = self.collect_saliency_examples()
+        saliency_items = self.generate_saliency_from_items(saliency_examples)
 
         saliency_images = [
             self.plot_three_stage_saliency_wandb(item)
-            for item in saliency_examples
+            for item in saliency_items
         ]
 
         wandb.log({

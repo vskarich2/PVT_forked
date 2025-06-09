@@ -10,10 +10,13 @@ from matplotlib import pyplot as plt
 # ignore everything
 from tqdm.auto import tqdm, trange
 import torch.nn.functional as F
+
+from cs231n.training.checkpoint_mixin import CheckpointMixin
 from cs231n.training.confusion import ConfusionMatrixMixin
 from cs231n.training.dataloaders import DataLoaderMixin
 from cs231n.training.preprocess_data import DataPreprocessingMixin
 from cs231n.training.saliency import SaliencyMixin
+from cs231n.training.stand_alone_test_mixin import StandAloneTestMixin
 from cs231n.training.stats import StatsMixin
 from cs231n.training.wandb_logging import WandbMixin
 
@@ -36,7 +39,9 @@ class Trainer(
     DataLoaderMixin,
     SaliencyMixin,
     DataPreprocessingMixin,
-    StatsMixin
+    StatsMixin,
+    CheckpointMixin,
+    StandAloneTestMixin
 ):
 
     def __init__(self, args, io):
@@ -45,32 +50,8 @@ class Trainer(
         self.device = torch.device(self.args.device)
         self.model = self.load_model(self.device)
         print(f"Using device: {self.args.device}")
-        self.class_names_modelnet = [
-            "airplane", "bathtub", "bed", "bench", "bookshelf", "bottle", "bowl", "car",
-            "chair", "cone", "cup", "curtain", "desk", "door", "dresser", "flower_pot",
-            "glass_box", "guitar", "keyboard", "lamp", "laptop", "mantel", "monitor",
-            "night_stand", "person", "piano", "plant", "radio", "range_hood", "sink",
-            "sofa", "stairs", "stool", "table", "tent", "toilet", "tv_stand", "vase",
-            "wardrobe", "xbox"
-        ]
-        self.class_names_scanobject = [
-                                "bag",
-                                "bin",
-                                "box",
-                                "cabinet",
-                                "chair",
-                                "desk",
-                                "display",
-                                "door",
-                                "shelf",
-                                "table",
-                                "bed",
-                                "pillow",
-                                "sink",
-                                "sofa",
-                                "toilet"
-                             ]
-        self.class_names = self.class_names_modelnet if self.args.dataset == "modelnet40" else self.class_names_scanobject
+
+        self.class_names = self.get_class_names()
 
         if self.args.compute_saliency:
             print("Registering hooks for saliency gradients!!")
@@ -122,38 +103,6 @@ class Trainer(
                     "train/LearningRate": f"{lr:.4f}",
                     "epoch": epoch
                 })
-    def stand_alone_test(self):
-
-        print(f"\nPure Testing Run Starting with....{self.args.dataset}")
-
-        test_loader = self.get_test_loader()
-
-        self.model.eval()
-        test_true = []
-        test_pred = []
-
-        with tqdm(test_loader, unit="batch") as logging_wrapper:
-            logging_wrapper.set_description(f"TESTING {len(test_loader)} Batches...")
-
-            with torch.no_grad():
-                for data, label in logging_wrapper:
-                    (feats, coords), label = self.preprocess_test_data(data, label)
-
-                    feats = feats.to(self.device, non_blocking=True)
-                    coords = coords.to(self.device, non_blocking=True)
-                    label = label.to(self.device, non_blocking=True)
-
-                    logits = self.model(feats)
-                    preds = logits.max(dim=1)[1]
-                    test_true.append(label.cpu().numpy())
-                    test_pred.append(preds.detach().cpu().numpy())
-
-                test_true = np.concatenate(test_true)
-                test_pred = np.concatenate(test_pred)
-                test_acc = metrics.accuracy_score(test_true, test_pred)
-                avg_per_class_acc = metrics.balanced_accuracy_score(test_true, test_pred)
-                outstr = 'Test :: test acc: %.6f, test avg acc: %.6f' % (test_acc, avg_per_class_acc)
-                print(outstr)
 
     def test_one_epoch(self, epoch, train_avg_loss, best_test_acc):
         test_loss = 0.0
@@ -161,7 +110,6 @@ class Trainer(
         test_pred = []
         test_true = []
         mis_examples = []
-        correct_items, incorrect_items = [], []
         self.model.eval()
 
         test_bar = tqdm(
@@ -189,7 +137,8 @@ class Trainer(
             test_true.append(label.cpu().numpy())
             test_pred.append(preds.cpu().numpy())
 
-            self.log_saliency(epoch)
+            if self.args.compute_saliency and self.args.wandb:
+                self.log_saliency(epoch)
 
             running_avg_loss = test_loss / count
             test_bar.set_postfix(test_loss=running_avg_loss)
@@ -199,7 +148,7 @@ class Trainer(
         # ───────────────────────────────────────────────────────────────
         # Confusion matrix and W&B logging
         # ───────────────────────────────────────────────────────────────
-        if self.args.conf_matrix:
+        if self.args.conf_matrix and self.args.wandb:
             self.log_confusion_matrix(test_true, test_pred, epoch)
             self.log_misclassified(mis_examples, epoch)
             self.log_per_class_accuracies(test_true, test_pred, epoch)
@@ -217,16 +166,6 @@ class Trainer(
         )
 
         return test_acc
-
-    def save_misclassified(self, coords, label, mis_examples, preds):
-        # save misclassified examples
-        if len(mis_examples) < 5:
-            diff = (preds != label).nonzero(as_tuple=False).squeeze(1)
-            for b in diff.tolist():
-                if len(mis_examples) >= 5:
-                    break
-                pc = coords[b].cpu().numpy().T
-                mis_examples.append((pc, label[b].item(), preds[b].item()))
 
     def train_one_epoch(self, epoch):
 
@@ -269,43 +208,15 @@ class Trainer(
                 "LR": f"{lr:.4f}"
             })
 
+        # Log gradient and param stats
+        if self.args.wandb:
+            self.log_gradient_and_param_statistics(epoch=epoch)
+
         # Close training bar for this epoch
         train_bar.close()
 
         # Return final average loss value
         return (running_loss / running_count)
-
-    def create_checkpoint_folder_name(self):
-        now = datetime.datetime.now()
-        timestamp = now.strftime("%a_%b%d_%Y-%H%M%S")
-        drive_location = "/content/drive/My Drive/cs231n_final_project/checkpoints"
-
-        if self.args.use_dsva:
-            attn = "dsva"
-        else:
-            attn = "window"
-
-        dir_name = f'{timestamp}_{attn}_{self.args.dataset}_{self.args.exp_name}'
-        save_dir = f'{drive_location}/{dir_name}'
-        if not self.args.eval:
-            print(f"Saving checkpoints to....{save_dir}")
-            print("When you see the ✅ it means the checkpoint was saved!!")
-
-        return save_dir
-
-    def save_new_checkpoint(self, epoch, test_acc):
-        model_filename = f"model_epoch_{epoch}_testAcc_{test_acc:.4f}.pth"
-
-        full_checkpoint_path = os.path.join(self.checkpoint_folder, model_filename)
-        os.makedirs(self.checkpoint_folder, exist_ok=True)
-
-        checkpoint = {
-            'epoch': epoch,
-            'model_state_dict': self.model.state_dict(),
-            'optimizer_state_dict': self.opt.state_dict(),
-            'scheduler_state_dict': self.scheduler.state_dict(),
-        }
-        torch.save(checkpoint, full_checkpoint_path)
 
     def load_model(self, device):
         # Try to load models

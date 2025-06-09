@@ -1,13 +1,9 @@
-import numpy as np
-import sklearn.metrics as metrics
 import torch
 import wandb
-from matplotlib import pyplot as plt
 
 import modules
 from cs231n.dsva.dsva_cross_attention import SparseDynamicVoxelAttention
 from cs231n.training.voxel_grid_centers import VoxelGridCentersMixin
-
 
 class SaliencyMixin(VoxelGridCentersMixin):
     """

@@ -14,6 +14,37 @@ class DataLoaderMixin:
     Mixin providing methods to initialize dataloaders
     """
 
+    def get_class_names(self):
+
+        class_names_modelnet = [
+            "airplane", "bathtub", "bed", "bench", "bookshelf", "bottle", "bowl", "car",
+            "chair", "cone", "cup", "curtain", "desk", "door", "dresser", "flower_pot",
+            "glass_box", "guitar", "keyboard", "lamp", "laptop", "mantel", "monitor",
+            "night_stand", "person", "piano", "plant", "radio", "range_hood", "sink",
+            "sofa", "stairs", "stool", "table", "tent", "toilet", "tv_stand", "vase",
+            "wardrobe", "xbox"
+        ]
+
+        class_names_scanobject = [
+            "bag",
+            "bin",
+            "box",
+            "cabinet",
+            "chair",
+            "desk",
+            "display",
+            "door",
+            "shelf",
+            "table",
+            "bed",
+            "pillow",
+            "sink",
+            "sofa",
+            "toilet"
+        ]
+
+        return class_names_modelnet if self.args.dataset == "modelnet40" else class_names_scanobject
+
     def get_train_loader(self):
         """
         - ModelNet40: use ModelNetDataLoader
