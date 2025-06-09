@@ -75,11 +75,17 @@ class SaliencyMixin(VoxelGridCentersMixin):
         all_results = []
         total_true = []
         total_pred = []
-        ran_once = False    
+        ran_once = False
+
         for batch_idx, (data, label, classname) in enumerate(test_loader):
             if ran_once:
                 break
             ran_once = True
+
+            # Save original point cloud for overlay
+            # data: Tensor[B, N, D] or similar
+            orig_data = data.detach().cpu().clone()  # keep on CPU
+
             print(f"\n--- Batch {batch_idx} start ---")
             (feats, coords), label = self.preprocess_test_data(data, label)
             feats, coords, label = (
@@ -157,11 +163,12 @@ class SaliencyMixin(VoxelGridCentersMixin):
                     centers_k = self.generate_voxel_grid_centers(Rk)[0].cpu().numpy()
                     print(f"    Centers Stage{stage} count={centers_k.shape[0]}")
 
-                # build and store the result dict
+                # build and store the result dict, now including original pointcloud
                 item = {
                     "pred": pred_i,
                     "true": label[i].item(),
                     "classname": classname[i],
+                    "pointcloud": orig_data[i].numpy(),
                     "coords0": batch_voxel_coords[0][i].numpy(),
                     "feat0": a1,
                     "grad0": g1,
@@ -177,7 +184,6 @@ class SaliencyMixin(VoxelGridCentersMixin):
             print(f"--- Batch {batch_idx} end ---")
 
         print("[test_compare_with_hooks] → Exiting method")
-        self.inspect_saliency_results(all_results)
         return all_results
 
     def inspect_saliency_results(self, results):
@@ -218,135 +224,103 @@ class SaliencyMixin(VoxelGridCentersMixin):
 # you can pass them in as item['points'] so we can overlay them in white.
 # ------------------------------------------------------------
 
-    def plot_three_stage_saliency(item):
+
+    def plot_three_stage_saliency(self,
+                                  item,
+                                  voxel_cmap: str = "viridis",
+                                  point_color: str = "#888888",
+                                  elev: float = 20,
+                                  azim: float = 45,
+                                  figsize=(18, 6)):
         """
         Given an `item` dict with keys:
           'coords0','feat0','grad0',
           'coords1','feat1','grad1',
           'coords2','feat2','grad2',
-          (optionally) 'points'=Nx3 point‐cloud coordinates,
-        compute a per‐voxel saliency score at each stage and plot 3 side‐by‐side
-        3D scatterplots: voxels colored by saliency + optional overlay of raw points.
+          'pointcloud'=Nx3 raw points (optional),
+        compute per‐voxel saliency = sum(|feat*grad|) and
+        plot 3 side‐by‐side 3D scatterplots:
+          • Voxels colored by normalized saliency
+          • Raw point cloud overlaid in gray
         """
+
         stages = [0, 1, 2]
-        fig = plt.figure(figsize=(18, 6))
+        fig = plt.figure(figsize=figsize)
 
+        # 1) Gather all coords to compute global bounds
+        all_xyz = []
+        for stage in stages:
+            c = item[f"coords{stage}"]
+            if torch.is_tensor(c):
+                c = c.cpu().numpy()
+            all_xyz.append(c)
+        if "pointcloud" in item:
+            pts = item["pointcloud"]
+            if torch.is_tensor(pts):
+                pts = pts.cpu().numpy()
+            all_xyz.append(pts)
+        all_xyz = np.concatenate(all_xyz, axis=0)
+        xyz_min, xyz_max = all_xyz.min(axis=0), all_xyz.max(axis=0)
+
+        # 2) Plot each stage
         for i, stage in enumerate(stages):
-            ax = fig.add_subplot(1, 3, i + 1, projection='3d')
+            ax = fig.add_subplot(1, 3, i + 1, projection="3d")
 
-            # 1) Grab coords, feat, grad for this stage
-            coords = item[f"coords{stage}"]  # (V_stage, 3) → can be torch.Tensor or np.ndarray
-            feat   = item[f"feat{stage}"]    # torch.Tensor of shape (V_stage, C_stage)
-            grad   = item[f"grad{stage}"]    # torch.Tensor of shape (V_stage, C_stage)
+            # fetch & normalize coords
+            coords = item[f"coords{stage}"]
+            if torch.is_tensor(coords):
+                coords = coords.cpu().numpy()
 
-            # If coords is a torch.Tensor, convert to NumPy:
-            if isinstance(coords, torch.Tensor):
-                coords = coords.detach().cpu().numpy()
+            # compute saliency
+            feat = item[f"feat{stage}"]
+            grad = item[f"grad{stage}"]
+            if not isinstance(feat, torch.Tensor):
+                feat = torch.as_tensor(feat)
+            if not isinstance(grad, torch.Tensor):
+                grad = torch.as_tensor(grad)
 
-            # 2) Compute a simple per‐voxel saliency score.
-            #    Here we do: saliency = sum over channels of |grad * feat|.
-            #    You could also do saliency = ||grad||_2 or just |grad|.sum().
+            # sum |feat * grad| per voxel
             with torch.no_grad():
-                # Ensure feat/grad are on CPU for NumPy conversion:
-                f = feat.detach().cpu()
-                g = grad.detach().cpu()
-                # element‐wise product → absolute → sum over channel‐dim:
-                sal = (g * f).abs().sum(dim=1)      # → shape (V_stage,)
-                sal = sal.cpu().numpy()
+                sal = (feat.cpu() * grad.cpu()).abs().sum(dim=1).numpy()
+            # normalize per‐stage
+            sal_norm = (sal - sal.min()) / (sal.max() - sal.min() + 1e-12)
 
-            # 3) Normalize saliency to [0,1] for nice color mapping:
-            sal_min, sal_max = sal.min(), sal.max()
-            if sal_max - sal_min > 1e-8:
-                sal_norm = (sal - sal_min) / (sal_max - sal_min)
-            else:
-                sal_norm = np.zeros_like(sal)
-
-            # 4) Plot voxels as a 3D scatter, colored by saliency:
-            xs = coords[:, 0]
-            ys = coords[:, 1]
-            zs = coords[:, 2]
-            p = ax.scatter(
-                xs, ys, zs,
+            # scatter voxels
+            ax.scatter(
+                coords[:, 0], coords[:, 1], coords[:, 2],
                 c=sal_norm,
-                cmap="hot",
-                s=20,          # adjust marker‐size as needed
-                alpha=0.8,     # semi‐transparent so points underneath can show
-                edgecolors="none"
+                cmap=voxel_cmap,
+                s=25,
+                alpha=0.8,
+                edgecolor="none"
             )
 
-            # 5) If you have the raw point cloud in item['points'], overlay it in white:
-            if "points" in item:
-                pts = item["points"]               # expect shape (N_pts, 3)
-                if isinstance(pts, torch.Tensor):
-                    pts = pts.detach().cpu().numpy()
+            # overlay raw points
+            if "pointcloud" in item:
                 ax.scatter(
                     pts[:, 0], pts[:, 1], pts[:, 2],
-                    c="white",
-                    s=1,          # tiny white dots for the point‐cloud
-                    alpha=0.5     # slightly transparent so you still see voxels behind
+                    c=point_color,
+                    s=1,
+                    alpha=0.4
                 )
 
             ax.set_title(f"Stage {stage}", fontsize=14)
-            ax.set_xlim(0, 1)
-            ax.set_ylim(0, 1)
-            ax.set_zlim(0, 1)
-            ax.set_xticks([])
-            ax.set_yticks([])
-            ax.set_zticks([])
+            ax.set_xlabel("X");
+            ax.set_ylabel("Y");
+            ax.set_zlabel("Z")
+            ax.set_xlim(xyz_min[0], xyz_max[0])
+            ax.set_ylim(xyz_min[1], xyz_max[1])
+            ax.set_zlim(xyz_min[2], xyz_max[2])
+            ax.view_init(elev=elev, azim=azim)
 
-        # 6) Add a single colorbar for all 3 subplots:
-        cax = fig.add_axes([0.92, 0.15, 0.02, 0.7])  # [left, bottom, width, height]
-        fig.colorbar(p, cax=cax, label="Saliency (normalized)")
+        # single global colorbar
+        m = plt.cm.ScalarMappable(cmap=voxel_cmap)
+        m.set_array([])
+        cbar = fig.colorbar(m, ax=fig.axes, fraction=0.02, pad=0.04)
+        cbar.set_label("Saliency (normalized)", fontsize=12)
 
-        plt.tight_layout(rect=[0, 0, 0.9, 1.0])
+        fig.suptitle(
+            f"3-Stage Saliency & Pointcloud Overlay\n  (pred={item['pred']}  true={item['true']}  {item['classname']})",
+            fontsize=16)
+        plt.tight_layout(rect=[0, 0, 0.95, 0.92])
         plt.show()
-
-    # ------------------------------------------------------------------
-    # Example usage:
-    # ------------------------------------------------------------------
-
-    # Suppose you have already computed (in your inference loop) something like:
-    #
-    #   item = {
-    #       "pred":      pred_i,          # (scalar)
-    #       "true":      label[i].item(), # (scalar)
-    #       "classname": classname[i],    # string
-    #
-    #       # Stage 0:
-    #       "coords0": coords_occ0, # torch.Tensor of shape (V0, 3), in [0,1]^3
-    #       "feat0":   a1,          # torch.Tensor of shape (V0, C1)
-    #       "grad0":   g1,          # torch.Tensor of shape (V0, C1)
-    #
-    #       # Stage 1:
-    #       "coords1": coords_occ1, # torch.Tensor of shape (V1, 3), in [0,1]^3
-    #       "feat1":   a2,          # torch.Tensor of shape (V1, C2)
-    #       "grad1":   g2,          # torch.Tensor of shape (V1, C2)
-    #
-    #       # Stage 2:
-    #       "coords2": coords_occ2, # torch.Tensor of shape (V2, 3), in [0,1]^3
-    #       "feat2":   a3,          # torch.Tensor of shape (V2, C3)
-    #       "grad2":   g3           # torch.Tensor of shape (V2, C3)
-    #   }
-    #
-    # (Optionally, if you also want to overlay the original N‐point point‐cloud:)
-    #   item["points"] = raw_point_cloud_coords  # shape (N,3), in [0,1]^3
-    #
-    # Then simply call:
-    #
-    #   plot_three_stage_saliency(item)
-    #
-    # and you will see a figure with three side‐by‐side panels—“Stage 0,” “Stage 1,” “Stage 2”—where:
-    #   • Each colored dot is a voxel‐coordinate, colored by the aggregated (|grad*feat|) saliency.
-    #   • Any white dots (if you provided item["points"]) are the original point‐cloud overlaid semi‐transparently.
-    #
-    # You can of course customize:
-    #   – How you compute “saliency” (maybe sum |gradients| alone, or ||gradient||₂, etc.)
-    #   – The colormap (“hot”, “viridis”, “magma”, etc.)
-    #   – Marker sizes (s=20, s=1) or alpha transparency.
-    #   – Whether to plot all three stages or just pick one.
-    # ------------------------------------------------------------------
-
-    # =============================================================================
-    # If you want to test this with dummy data (for illustration), you can do:
-    # =============================================================================
-
