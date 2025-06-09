@@ -84,47 +84,39 @@ class pvt(nn.Module):
         #    Each block returns updated features and unchanged coords
         for block in self.point_features:
             features, _ = block((features, coords))  # features: (B, C_i, N)
-            print("PVTConv 9.2")
-            out_features_list.append(features)
-            print("PVTConv 9.5")
 
-        if self.args.scanobject_compare:
-            print("PVTConv 10")
+            out_features_list.append(features)
+
+
 
         # 2) Append per-point max and mean statistics
         #    a) Max over channel dim -> shape (B, C_last, 1) -> repeat to (B, C_last, N)
         max_feat = features.max(dim=-1, keepdim=True).values  # (B, C_last, 1)
         max_feat = max_feat.repeat(1, 1, N)                  # (B, C_last, N)
         out_features_list.append(max_feat)
-        if self.args.scanobject_compare:
-            print("PVTConv 11")
+
 
         #    b) Mean over channel dim -> (B, 1, N) then expand channels
         mean_feat = features.mean(dim=-1, keepdim=True)      # (B, C_last, 1)
         mean_feat = mean_feat.repeat(1, 1, N)                # (B, C_last, N)
         out_features_list.append(mean_feat)
 
-        if self.args.scanobject_compare:
-            print("PVTConv 12")
+
 
         # 3) Concatenate all collected features along channel axis
         #    result shape: (B, total_channels, N)
         features = torch.cat(out_features_list, dim=1)
-        if self.args.scanobject_compare:
-            print("PVTConv 13")
-            print(features.shape)
+
         print(f"[PVT] before fuse: features.shape = {features.shape}, "
               f"conv_fuse expects = {self.conv_fuse[0].in_channels}")
         # 4) Fuse high-dimensional features down to 1024 channels
         features = self.conv_fuse(features)
 
-        if self.args.scanobject_compare:
-            print("PVTConv 14")
+
 
         features = F.leaky_relu(features)    # (B, 1024, N)
 
-        if self.args.scanobject_compare:
-            print("PVTConv 15")
+
         # 5) Global pooling to get a per-cloud descriptor
         features = F.adaptive_max_pool1d(features, 1)  # (B, 1024, 1)
         features = features.view(B, -1)                # (B, 1024)

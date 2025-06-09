@@ -100,8 +100,7 @@ class PVTConv(nn.Module):
         """
         # Unpack the input tuple into point features and coordinates.
         features, coords = inputs # features: (B, C_in, N), coords: (B, 3, N)
-        if self.args.scanobject_compare:
-            print("PVTConv 1")
+
         # -------------------------------
         # 1) Voxel path: Convert points → voxels → process → devoxelize back to points
         # -------------------------------
@@ -116,15 +115,13 @@ class PVTConv(nn.Module):
         #    This module processes the dense voxel grid, extracts hierarchical features,
         #    and aggregates local context within the grid.
         #    The output remains a 3D voxel grid of shape (B, C_voxel, R, R, R).
-        if self.args.scanobject_compare:
-            print("PVTConv 3")
+
         voxel_features = self.voxel_encoder(voxel_features)
 
         # c) Squeeze-and-Excitation (SE): Channel-wise gating.
         #    This module adaptively re-weights each channel of the voxel features,
         #    selectively emphasizing informative channels.
-        if self.args.scanobject_compare:
-            print("PVTConv 4")
+
         voxel_features = self.SE(voxel_features)
 
         # d) Trilinear devoxelization: Interpolate voxel grid features back to the original N points.
@@ -132,17 +129,8 @@ class PVTConv(nn.Module):
         #    to perform trilinear interpolation, effectively sampling features from the continuous
         #    voxel grid at the exact locations of the original points.
         #    The output is per-point features of shape (B, C_voxel, N).
-        if self.args.scanobject_compare:
-            print("PVTConv 5")
 
-        print(
-            "DEV: voxel_coords:",
-            voxel_coords.shape,
-            voxel_coords.dtype,
-            voxel_coords.min().item(),
-            voxel_coords.max().item(),
-            "should be int in [0, R-1]."
-        )
+
         voxel_features = F.trilinear_devoxelize(
             voxel_features,
             voxel_coords,
@@ -154,13 +142,11 @@ class PVTConv(nn.Module):
         # -------------------------------
         # 2) Point path: Pure point-cloud self-attention
         # -------------------------------
-        if self.args.scanobject_compare:
-            print("PVTConv 6")
+
         # a) Rearrange coordinates to (B, N, 3) for pairwise difference computation.
         #    The original 'coords' are (B, 3, N).
         pos = coords.permute(0, 2, 1) # Shape: (B, N, 3)
-        if self.args.scanobject_compare:
-            print("PVTConv 7")
+
         # b) Compute pairwise relative positions.
         #    This calculates the vector difference between all pairs of points within a batch.
         #    - pos[:, :, None, :] is (B, N, 1, 3)
@@ -176,8 +162,7 @@ class PVTConv(nn.Module):
         # This path directly processes the point cloud, often using self-attention
         # that can leverage the relative positional information.
         # The output 'point_out' has shape (B, C_out, N).
-        if self.args.scanobject_compare:
-            print("PVTConv 8")
+
         point_out = self.point_features(features, rel_pos)
 
         # -------------------------------
