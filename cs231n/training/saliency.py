@@ -62,12 +62,12 @@ class SaliencyMixin(VoxelGridCentersMixin):
 
 
         def _backward_hook(module, grad_in, grad_out):
-            # `grad_out[0]` is the gradient of the loss w.r.t. that module’s output.
-            # print("_backward_hook before")
-            # print(grad_out.shape)
-            # self.model._attn_grads.append(grad_out[0].detach().cpu())
-            # print("_backward_hook after")
-            pass
+            #`grad_out[0]` is the gradient of the loss w.r.t. that module’s output.
+            print("_backward_hook before")
+            print(grad_out.shape)
+            self.model._attn_grads.append(grad_out[0].detach().cpu())
+            print("_backward_hook after")
+
 
         # (D) Walk through the model, find every SparseDynamicVoxelAttention, and register:
         for name, submod in self.model.named_modules():
