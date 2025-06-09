@@ -67,108 +67,115 @@ class SaliencyMixin(VoxelGridCentersMixin):
 
         # no module‐level backward hooks needed any more
 
-    def test_compare_with_hooks(self):
-        print("[test_compare_with_hooks] → Entering method")
-        self.model.eval()
-        test_loader = self.get_test_loader()
+        def test_compare_with_hooks(self):
+            print("[test_compare_with_hooks] → Entering method")
+            self.model.eval()
+            test_loader = self.get_test_loader()
 
-        all_results = []
-        total_true = []
-        total_pred = []
+            all_results = []
+            total_true = []
+            total_pred = []
 
-        for batch_idx, (data, label, classname) in enumerate(test_loader):
-            print(f"\n--- Batch {batch_idx} start ---")
-            (feats, coords), label = self.preprocess_test_data(data, label)
-            feats, coords, label = (
-                feats.to(self.device),
-                coords.to(self.device),
-                label.to(self.device)
-            )
-            B, C_in, N = feats.shape
+            for batch_idx, (data, label, classname) in enumerate(test_loader):
+                print(f"\n--- Batch {batch_idx} start ---")
+                (feats, coords), label = self.preprocess_test_data(data, label)
+                feats, coords, label = (
+                    feats.to(self.device),
+                    coords.to(self.device),
+                    label.to(self.device)
+                )
+                B, C_in, N = feats.shape
+                print(f"[Batch {batch_idx}] shapes: feats={feats.shape}, coords={coords.shape}, label={label.shape}")
 
-            # Clear hooks & grads
-            for s in range(3):
-                self._last_voxel_feats[s] = None
-                self._last_voxel_coords[s] = None
-            self.model._attn_acts.clear()
-            self.model._attn_grads.clear()
-            self.model.zero_grad()
-
-            # ─── Batch‐level forward ───
-            logits = self.model(feats)
-            preds = logits.argmax(dim=1)
-            total_true.append(label.cpu().numpy())
-            total_pred.append(preds.cpu().numpy())
-
-            # Ensure hooks fired and stash the batch‐level voxel outputs
-            batch_voxel_feats = []
-            batch_voxel_coords = []
-            for stage in range(3):
-                vf = self._last_voxel_feats[stage]
-                vc = self._last_voxel_coords[stage]
-                if vf is None or vc is None:
-                    raise RuntimeError(f"Stage {stage} voxel hook missing!")
-                # vf: (B, C, R, R, R), vc: (B, 3, V_occ)
-                batch_voxel_feats.append(vf.detach().cpu().clone())
-                batch_voxel_coords.append(vc.detach().cpu().clone())
-
-            # ─── Per‐sample backward & saliency ───
-            for i in range(B):
-                print(f"  [Batch {batch_idx}, Sample {i}]")
-                # clear before each sample
-                self.model.zero_grad()
+                # ─── Clear previous hooks & grads ───
+                for s in range(3):
+                    self._last_voxel_feats[s] = None
+                    self._last_voxel_coords[s] = None
                 self.model._attn_acts.clear()
                 self.model._attn_grads.clear()
+                self.model.zero_grad()
 
-                # single‐sample forward → hooks fire on this too
-                feat_i = feats[i:i + 1].detach().requires_grad_(True)
-                out_i = self.model(feat_i)
-                pred_i = out_i.argmax(dim=1).item()
+                # ─── Batch‐level forward ───
+                print(f"[Batch {batch_idx}] Forwarding full batch")
+                logits = self.model(feats)
+                preds = logits.argmax(dim=1)
+                total_true.append(label.cpu().numpy())
+                total_pred.append(preds.cpu().numpy())
 
-                # backward on that one logit
-                scalar_logit = out_i[0, pred_i]
-                scalar_logit.backward()
-
-                # grab per‐stage activation/grad pairs
-                a1, g1 = self.model._attn_acts[0][0].cpu(), self.model._attn_grads[0][0].cpu()
-                a2, g2 = self.model._attn_acts[1][0].cpu(), self.model._attn_grads[1][0].cpu()
-                a3, g3 = self.model._attn_acts[2][0].cpu(), self.model._attn_grads[2][0].cpu()
-
-                # compute non‐empty masks using the STASHED batch feats
-                masks = []
+                # ─── Stash batch‐level voxel feats/coords ───
+                batch_voxel_feats = []
+                batch_voxel_coords = []
                 for stage in range(3):
-                    vox_feats = batch_voxel_feats[stage][i:i + 1]  # (1, C, R, R, R)
-                    mask = modules.voxel_encoder.extract_non_empty_voxel_mask(
-                        vox_feats, self.args
-                    )  # (1, R^3)
-                    masks.append(mask.cpu())
-                    print(f"    Mask Stage{stage} shape={mask.shape}")
+                    vf = self._last_voxel_feats[stage]
+                    vc = self._last_voxel_coords[stage]
+                    if vf is None or vc is None:
+                        raise RuntimeError(f"Stage {stage} voxel hook missing!")
+                    print(f"[Batch {batch_idx}] Stage {stage} voxel_feats={vf.shape}, voxel_coords={vc.shape}")
 
-                # recover centers once more (no clobbering risk)
-                for stage in range(3):
-                    Rk = batch_voxel_feats[stage].shape[2]
-                    centers_k = self.generate_voxel_grid_centers(Rk)[0].cpu().numpy()
-                    print(f"    Centers Stage{stage} count={centers_k.shape[0]}")
+                    batch_voxel_feats.append(vf.detach().cpu().clone())
+                    batch_voxel_coords.append(vc.detach().cpu().clone())
 
-                # build and store the result dict
-                item = {
-                    "pred": pred_i,
-                    "true": label[i].item(),
-                    "classname": classname[i],
-                    "coords0": batch_voxel_coords[0][i].numpy(),
-                    "feat0": a1,
-                    "grad0": g1,
-                    "coords1": batch_voxel_coords[1][i].numpy(),
-                    "feat1": a2,
-                    "grad1": g2,
-                    "coords2": batch_voxel_coords[2][i].numpy(),
-                    "feat2": a3,
-                    "grad2": g3,
-                }
-                all_results.append(item)
+                # ─── Per‐sample backward & saliency ───
+                for i in range(B):
+                    print(f"  [Batch {batch_idx}, Sample {i}] single‐sample pass")
+                    # clear before each sample
+                    self.model.zero_grad()
+                    self.model._attn_acts.clear()
+                    self.model._attn_grads.clear()
 
-            print(f"--- Batch {batch_idx} end ---")
+                    # single‐sample forward → hooks fire again for saliency
+                    feat_i = feats[i: i + 1].detach().requires_grad_(True)
+                    out_i = self.model(feat_i)
+                    pred_i = out_i.argmax(dim=1).item()
+                    print(f"    pred={pred_i}")
 
+                    # backward on that one logit
+                    scalar_logit = out_i[0, pred_i]
+                    scalar_logit.backward()
+                    print("    backward complete")
+
+                    # grab per‐stage activation/grad pairs
+                    a1, g1 = self.model._attn_acts[0][0].cpu(), self.model._attn_grads[0][0].cpu()
+                    a2, g2 = self.model._attn_acts[1][0].cpu(), self.model._attn_grads[1][0].cpu()
+                    a3, g3 = self.model._attn_acts[2][0].cpu(), self.model._attn_grads[2][0].cpu()
+                    print(f"    Stage0 a1={a1.shape}, g1={g1.shape}")
+                    print(f"    Stage1 a2={a2.shape}, g2={g2.shape}")
+                    print(f"    Stage2 a3={a3.shape}, g3={g3.shape}")
+
+                    # compute non‐empty masks using the STASHED batch feats
+                    for stage in range(3):
+                        vox_feats = batch_voxel_feats[stage][i: i + 1]  # (1, C, R, R, R)
+                        mask = modules.voxel_encoder.extract_non_empty_voxel_mask(vox_feats, self.args)
+                        print(f"    Mask Stage{stage}={mask.shape}")
+
+                    # recover centers once more
+                    for stage in range(3):
+                        Rk = batch_voxel_feats[stage].shape[2]
+                        centers_k = self.generate_voxel_grid_centers(Rk)[0].cpu().numpy()
+                        print(f"    Centers Stage{stage} count={centers_k.shape[0]}")
+
+                    # build and store the result dict
+                    item = {
+                        "pred": pred_i,
+                        "true": label[i].item(),
+                        "classname": classname[i],
+                        "coords0": batch_voxel_coords[0][i].numpy(),
+                        "feat0": a1,
+                        "grad0": g1,
+                        "coords1": batch_voxel_coords[1][i].numpy(),
+                        "feat1": a2,
+                        "grad1": g2,
+                        "coords2": batch_voxel_coords[2][i].numpy(),
+                        "feat2": a3,
+                        "grad2": g3,
+                    }
+                    all_results.append(item)
+
+                print(f"--- Batch {batch_idx} end ---")
+
+            print("[test_compare_with_hooks] → Exiting method")
+            return all_results
+        
         print("[test_compare_with_hooks] → Exiting method")
         return all_results
 
