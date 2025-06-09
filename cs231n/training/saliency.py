@@ -75,8 +75,11 @@ class SaliencyMixin(VoxelGridCentersMixin):
         all_results = []
         total_true = []
         total_pred = []
-
+        ran_once = False    
         for batch_idx, (data, label, classname) in enumerate(test_loader):
+            if ran_once:
+                break
+            ran_once = True
             print(f"\n--- Batch {batch_idx} start ---")
             (feats, coords), label = self.preprocess_test_data(data, label)
             feats, coords, label = (
