@@ -88,7 +88,6 @@ class pvt(nn.Module):
             out_features_list.append(features)
 
 
-
         # 2) Append per-point max and mean statistics
         #    a) Max over channel dim -> shape (B, C_last, 1) -> repeat to (B, C_last, N)
         max_feat = features.max(dim=-1, keepdim=True).values  # (B, C_last, 1)
@@ -102,20 +101,14 @@ class pvt(nn.Module):
         out_features_list.append(mean_feat)
 
 
-
         # 3) Concatenate all collected features along channel axis
         #    result shape: (B, total_channels, N)
         features = torch.cat(out_features_list, dim=1)
 
-        print(f"[PVT] before fuse: features.shape = {features.shape}, "
-              f"conv_fuse expects = {self.conv_fuse[0].in_channels}")
         # 4) Fuse high-dimensional features down to 1024 channels
         features = self.conv_fuse(features)
 
-
-
         features = F.leaky_relu(features)    # (B, 1024, N)
-
 
         # 5) Global pooling to get a per-cloud descriptor
         features = F.adaptive_max_pool1d(features, 1)  # (B, 1024, 1)

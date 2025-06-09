@@ -26,11 +26,9 @@ class SaliencyMixin(VoxelGridCentersMixin):
                 This hook is invoked right after the i-th PVTConv’s Voxelization.forward(...)
                 ‘out’ is (avg_voxel_features, norm_coords). We only need index 0 of that tuple.
                 """
-                print("GOT HERE _voxel_hook 1")
                 self._last_voxel_feats[i] = out[0]  # store [B, C_voxel, R, R, R]
                 self._last_voxel_coords[i] = out[1]  # store [B, 3, N_pts]
 
-                print("GOT HERE _voxel_hook 2")
             return _voxel_hook
 
         # (C) Attach one hook to each PVTConv.voxelization.  We loop over i = 0..2:
@@ -47,9 +45,8 @@ class SaliencyMixin(VoxelGridCentersMixin):
 
         def _forward_hook(module, inp, out):
             # normalize to a list of tensors
-            outs = [out] if torch.is_tensor(out) else list(out)
 
-            for t in outs:
+            for t in out:
                 # 1) save the activation
                 self.model._attn_acts.append(t.detach().cpu())
 
@@ -59,6 +56,8 @@ class SaliencyMixin(VoxelGridCentersMixin):
                     self.model._attn_grads.insert(idx, grad.detach().cpu())
 
                 t.register_hook(_grab_grad)
+
+
 
         # walk and attach only the forward hooks
         for name, submod in self.model.named_modules():
@@ -138,15 +137,19 @@ class SaliencyMixin(VoxelGridCentersMixin):
                 pred_i = out_i.argmax(dim=1).item()
                 print(f"    pred={pred_i}")
 
+                a1  = self.model._attn_acts[0].cpu()
+                a2  = self.model._attn_acts[1].cpu()
+                a3  = self.model._attn_acts[2].cpu()
+
                 # backward on that one logit
                 scalar_logit = out_i[0, pred_i]
                 scalar_logit.backward()
                 print("    backward complete")
 
-                # grab per‐stage activation/grad pairs
-                a1, g1 = self.model._attn_acts[0][0].cpu(), self.model._attn_grads[0][0].cpu()
-                a2, g2 = self.model._attn_acts[1][0].cpu(), self.model._attn_grads[1][0].cpu()
-                a3, g3 = self.model._attn_acts[2][0].cpu(), self.model._attn_grads[2][0].cpu()
+                #grab per‐stage activation/grad pairs
+                g1 =  self.model._attn_grads[0].cpu()
+                g2 =  self.model._attn_grads[1].cpu()
+                g3 =  self.model._attn_grads[2].cpu()
                 print(f"    Stage0 a1={a1.shape}, g1={g1.shape}")
                 print(f"    Stage1 a2={a2.shape}, g2={g2.shape}")
                 print(f"    Stage2 a3={a3.shape}, g3={g3.shape}")
@@ -160,6 +163,7 @@ class SaliencyMixin(VoxelGridCentersMixin):
                 # recover centers once more
                 for stage in range(3):
                     Rk = batch_voxel_feats[stage].shape[2]
+                    # Compute voxel centers in normalized [-1, 1]^3 space
                     centers_k = self.generate_voxel_grid_centers(Rk)[0].cpu().numpy()
                     print(f"    Centers Stage{stage} count={centers_k.shape[0]}")
 
@@ -186,7 +190,7 @@ class SaliencyMixin(VoxelGridCentersMixin):
         print("[test_compare_with_hooks] → Exiting method")
         return all_results
 
-    def inspect_saliency_results(self, results):
+    def inspect_saliency_results(self, item):
         """
         For each entry in results, print out:
           - pred / true / classname types
@@ -194,36 +198,18 @@ class SaliencyMixin(VoxelGridCentersMixin):
                                 feat shape & dtype (torch.FloatTensor),
                                 grad shape & dtype (torch.FloatTensor)
         """
-        for idx, item in enumerate(results):
-            print(f"\n––– Result #{idx} –––")
-            print(f" pred : {item['pred']}   (type={type(item['pred'])})")
-            print(f" true : {item['true']}   (type={type(item['true'])})")
-            print(f" classname : {item['classname']}   (type={type(item['classname'])})")
-            for stage in (0, 1, 2):
-                coords = item[f"coords{stage}"]
-                feat = item[f"feat{stage}"]
-                grad = item[f"grad{stage}"]
-                print(f" Stage {stage}:")
-                print(f"   coords{stage}.shape = {coords.shape}, dtype = {coords.dtype}")
-                print(f"   feat{stage}.shape   = {tuple(feat.shape)}, dtype = {feat.dtype}")
-                print(f"   grad{stage}.shape   = {tuple(grad.shape)}, dtype = {grad.dtype}")
 
-    # ------------------------------------------------------------
-# Example “item” dictionary (you already have this in your code):
-#    - coords0, feat0, grad0  : stage 0 voxel coords, features, and gradients
-#    - coords1, feat1, grad1  : stage 1 voxel coords, features, and gradients
-#    - coords2, feat2, grad2  : stage 2 voxel coords, features, and gradients
-#
-# Here we assume:
-#  • coordsN is a (V_N, 3) float‐tensor (or NumPy array) of each occupied
-#    voxel’s center‐coordinates in [0,1]³ (or already normalized to your scene).
-#  • featN is a (V_N, C_N) PyTorch tensor of features at that stage.
-#  • gradN is a (V_N, C_N) PyTorch tensor of gradients (∂score/∂feat) at that stage.
-#
-# If you also have the original point‐cloud coordinates (N_pts × 3),
-# you can pass them in as item['points'] so we can overlay them in white.
-# ------------------------------------------------------------
-
+        print(f" pred : {item['pred']}   (type={type(item['pred'])})")
+        print(f" true : {item['true']}   (type={type(item['true'])})")
+        print(f" classname : {item['classname']}   (type={type(item['classname'])})")
+        for stage in (0, 1, 2):
+            coords = item[f"coords{stage}"]
+            feat = item[f"feat{stage}"]
+            grad = item[f"grad{stage}"]
+            print(f" Stage {stage}:")
+            print(f"   coords{stage}.shape = {coords.shape}, dtype = {coords.dtype}")
+            print(f"   feat{stage}.shape   = {tuple(feat.shape)}, dtype = {feat.dtype}")
+            print(f"   grad{stage}.shape   = {tuple(grad.shape)}, dtype = {grad.dtype}")
 
     def plot_three_stage_saliency(self,
                                   item,
@@ -238,32 +224,35 @@ class SaliencyMixin(VoxelGridCentersMixin):
           'coords1','feat1','grad1',
           'coords2','feat2','grad2',
           'pointcloud'=N×D raw points (optional),
-        compute per‐voxel saliency = sum(|feat*grad|) and
-        plot 3 side‐by‐side 3D scatterplots:
+        compute per‑voxel saliency = sum(|feat*grad|) and
+        plot 3 side‑by‑side 3D scatterplots:
           • Voxels colored by normalized saliency
           • Raw point cloud overlaid in gray
         """
+        import numpy as np
+        import torch
+        import matplotlib.pyplot as plt
+        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
         stages = [0, 1, 2]
         fig = plt.figure(figsize=figsize)
 
-        # 1) Gather all coords to compute global bounds
+        # 1) Gather coords for global bounds
         all_xyz = []
         for stage in stages:
             c = item[f"coords{stage}"]
             if torch.is_tensor(c):
                 c = c.cpu().numpy()
-            # transpose if shape is (3, V)
+            # transpose if stored as (3, V)
             if isinstance(c, np.ndarray) and c.ndim == 2 and c.shape[0] == 3 and c.shape[1] != 3:
                 c = c.T
             all_xyz.append(c)
 
-        # 2) Extract and slice pointcloud to XYZ only
+        # 2) Include raw point cloud (XYZ only)
         if "pointcloud" in item:
             pts = item["pointcloud"]
             if torch.is_tensor(pts):
                 pts = pts.cpu().numpy()
-            # keep only XYZ columns
             if pts.ndim == 2 and pts.shape[1] > 3:
                 pts = pts[:, :3]
             all_xyz.append(pts)
@@ -276,14 +265,14 @@ class SaliencyMixin(VoxelGridCentersMixin):
         for i, stage in enumerate(stages):
             ax = fig.add_subplot(1, 3, i + 1, projection="3d")
 
-            # fetch coords
+            # fetch & normalize coords
             coords = item[f"coords{stage}"]
             if torch.is_tensor(coords):
                 coords = coords.cpu().numpy()
             if isinstance(coords, np.ndarray) and coords.ndim == 2 and coords.shape[0] == 3 and coords.shape[1] != 3:
                 coords = coords.T
 
-            # fetch feat & grad
+            # fetch feats & grads
             feat = item[f"feat{stage}"]
             grad = item[f"grad{stage}"]
             if not torch.is_tensor(feat):
@@ -291,14 +280,18 @@ class SaliencyMixin(VoxelGridCentersMixin):
             if not torch.is_tensor(grad):
                 grad = torch.as_tensor(grad)
 
-            # compute saliency: sum over all non-voxel dims
-            with torch.no_grad():
-                p = (feat.cpu() * grad.cpu()).abs()
-                # collapse all dims except the first (voxel index)
-                p_flat = p.view(p.shape[0], -1)
-                sal = p_flat.sum(dim=1).numpy()
+            # 4a) Align features to voxel axis
+            V = coords.shape[0]
+            if feat.dim() == 2 and feat.shape[1] == V and feat.shape[0] != V:
+                feat = feat.T
+                grad = grad.T
 
-            # normalize per-stage
+            # 4b) Compute saliency per voxel
+            p = (feat.cpu() * grad.cpu()).abs()
+            if p.dim() == 1:
+                sal = p.numpy()
+            else:
+                sal = p.sum(dim=1).numpy()
             sal_norm = (sal - sal.min()) / (sal.max() - sal.min() + 1e-12)
 
             # scatter voxels colored by saliency
@@ -325,6 +318,7 @@ class SaliencyMixin(VoxelGridCentersMixin):
                     alpha=0.4
                 )
 
+            # formatting
             ax.set_title(f"Stage {stage}", fontsize=14)
             ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
             ax.set_xlim(xyz_min[0], xyz_max[0])
@@ -332,16 +326,16 @@ class SaliencyMixin(VoxelGridCentersMixin):
             ax.set_zlim(xyz_min[2], xyz_max[2])
             ax.view_init(elev=elev, azim=azim)
 
-        # 5) Single global colorbar
+        # 5) Global colorbar
         m = plt.cm.ScalarMappable(cmap=voxel_cmap)
         m.set_array([])
         cbar = fig.colorbar(m, ax=fig.axes, fraction=0.02, pad=0.04)
         cbar.set_label("Saliency (normalized)", fontsize=12)
 
-        # 6) Suptitle with prediction info
+        # 6) Suptitle
         fig.suptitle(
             f"3-Stage Saliency & Pointcloud Overlay\n  (pred={item['pred']}  true={item['true']}  {item['classname']})",
-            fontsize=16)
+            fontsize=16
+        )
         plt.tight_layout(rect=[0, 0, 0.95, 0.92])
         plt.show()
-
