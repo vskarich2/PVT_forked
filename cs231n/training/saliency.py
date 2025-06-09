@@ -174,7 +174,30 @@ class SaliencyMixin(VoxelGridCentersMixin):
             print(f"--- Batch {batch_idx} end ---")
 
         print("[test_compare_with_hooks] → Exiting method")
+        self.inspect_saliency_results(all_results)
         return all_results
+
+    def inspect_saliency_results(self, results):
+        """
+        For each entry in results, print out:
+          - pred / true / classname types
+          - for each stage 0,1,2: coords shape & dtype (should be numpy floats),
+                                feat shape & dtype (torch.FloatTensor),
+                                grad shape & dtype (torch.FloatTensor)
+        """
+        for idx, item in enumerate(results):
+            print(f"\n––– Result #{idx} –––")
+            print(f" pred : {item['pred']}   (type={type(item['pred'])})")
+            print(f" true : {item['true']}   (type={type(item['true'])})")
+            print(f" classname : {item['classname']}   (type={type(item['classname'])})")
+            for stage in (0, 1, 2):
+                coords = item[f"coords{stage}"]
+                feat = item[f"feat{stage}"]
+                grad = item[f"grad{stage}"]
+                print(f" Stage {stage}:")
+                print(f"   coords{stage}.shape = {coords.shape}, dtype = {coords.dtype}")
+                print(f"   feat{stage}.shape   = {tuple(feat.shape)}, dtype = {feat.dtype}")
+                print(f"   grad{stage}.shape   = {tuple(grad.shape)}, dtype = {grad.dtype}")
 
     # ------------------------------------------------------------
 # Example “item” dictionary (you already have this in your code):
