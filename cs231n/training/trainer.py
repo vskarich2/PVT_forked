@@ -189,8 +189,7 @@ class Trainer(
             test_true.append(label.cpu().numpy())
             test_pred.append(preds.cpu().numpy())
 
-            saliency_examples = self.collect_saliency_examples()
-
+            self.log_saliency(epoch)
 
             running_avg_loss = test_loss / count
             test_bar.set_postfix(test_loss=running_avg_loss)
