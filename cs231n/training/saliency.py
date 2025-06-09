@@ -175,9 +175,6 @@ class SaliencyMixin(VoxelGridCentersMixin):
 
             print("[test_compare_with_hooks] → Exiting method")
             return all_results
-        
-        print("[test_compare_with_hooks] → Exiting method")
-        return all_results
 
     # ------------------------------------------------------------
 # Example “item” dictionary (you already have this in your code):
