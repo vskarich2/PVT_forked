@@ -74,18 +74,14 @@ class SaliencyMixin(VoxelGridCentersMixin):
         all_results = []
         total_true = []
         total_pred = []
-        count = False
 
         for batch_idx, (data, label, classname) in enumerate(test_loader):
-            if ran_once:
-                break
-            ran_once = True
 
             # Save original point cloud for overlay
             # data: Tensor[B, N, D] or similar
             orig_data = data.detach().cpu().clone()  # keep on CPU
-
-            print(f"\n--- Batch {batch_idx} start ---")
+            if self.args.debug_verbose:
+                print(f"\n--- Batch {batch_idx} start ---")
             (feats, coords), label = self.preprocess_test_data(data, label)
             feats, coords, label = (
                 feats.to(self.device),
@@ -93,7 +89,8 @@ class SaliencyMixin(VoxelGridCentersMixin):
                 label.to(self.device)
             )
             B, C_in, N = feats.shape
-            print(f"[Batch {batch_idx}] shapes: feats={feats.shape}, coords={coords.shape}, label={label.shape}")
+            if self.args.debug_verbose:
+                print(f"[Batch {batch_idx}] shapes: feats={feats.shape}, coords={coords.shape}, label={label.shape}")
 
             # ─── Clear previous hooks & grads ───
             for s in range(3):
@@ -104,7 +101,8 @@ class SaliencyMixin(VoxelGridCentersMixin):
             self.model.zero_grad()
 
             # ─── Batch‐level forward ───
-            print(f"[Batch {batch_idx}] Forwarding full batch")
+            if self.args.debug_verbose:
+                print(f"[Batch {batch_idx}] Forwarding full batch")
             logits = self.model(feats)
             preds = logits.argmax(dim=1)
             total_true.append(label.cpu().numpy())
@@ -118,14 +116,16 @@ class SaliencyMixin(VoxelGridCentersMixin):
                 vc = self._last_voxel_coords[stage]
                 if vf is None or vc is None:
                     raise RuntimeError(f"Stage {stage} voxel hook missing!")
-                print(f"[Batch {batch_idx}] Stage {stage} voxel_feats={vf.shape}, voxel_coords={vc.shape}")
+                if self.args.debug_verbose:
+                    print(f"[Batch {batch_idx}] Stage {stage} voxel_feats={vf.shape}, voxel_coords={vc.shape}")
 
                 batch_voxel_feats.append(vf.detach().cpu().clone())
                 batch_voxel_coords.append(vc.detach().cpu().clone())
 
             # ─── Per‐sample backward & saliency ───
             for i in range(B):
-                print(f"  [Batch {batch_idx}, Sample {i}] single‐sample pass")
+                if self.args.debug_verbose:
+                    print(f"  [Batch {batch_idx}, Sample {i}] single‐sample pass")
                 # clear before each sample
                 self.model.zero_grad()
                 self.model._attn_acts.clear()
@@ -135,7 +135,8 @@ class SaliencyMixin(VoxelGridCentersMixin):
                 feat_i = feats[i: i + 1].detach().requires_grad_(True)
                 out_i = self.model(feat_i)
                 pred_i = out_i.argmax(dim=1).item()
-                print(f"    pred={pred_i}")
+                if self.args.debug_verbose:
+                    print(f"    pred={pred_i}")
 
                 a1  = self.model._attn_acts[0].cpu()
                 a2  = self.model._attn_acts[1].cpu()
@@ -144,15 +145,17 @@ class SaliencyMixin(VoxelGridCentersMixin):
                 # backward on that one logit
                 scalar_logit = out_i[0, pred_i]
                 scalar_logit.backward()
-                print("    backward complete")
+                if self.args.debug_verbose:
+                    print("    backward complete")
 
                 #grab per‐stage activation/grad pairs
                 g1 =  self.model._attn_grads[0].cpu()
                 g2 =  self.model._attn_grads[1].cpu()
                 g3 =  self.model._attn_grads[2].cpu()
-                print(f"    Stage0 a1={a1.shape}, g1={g1.shape}")
-                print(f"    Stage1 a2={a2.shape}, g2={g2.shape}")
-                print(f"    Stage2 a3={a3.shape}, g3={g3.shape}")
+                if self.args.debug_verbose:
+                    print(f"    Stage0 a1={a1.shape}, g1={g1.shape}")
+                    print(f"    Stage1 a2={a2.shape}, g2={g2.shape}")
+                    print(f"    Stage2 a3={a3.shape}, g3={g3.shape}")
 
                 # Pre-allocate stage-wise values
                 coords_list = []
@@ -164,11 +167,13 @@ class SaliencyMixin(VoxelGridCentersMixin):
                     # 2. Compute non-empty voxel mask → shape: (1, R³)
                     mask = modules.voxel_encoder.extract_non_empty_voxel_mask(vox_feats, self.args)  # (1, R³)
                     mask = mask[0].cpu().numpy().astype(bool)  # → shape: (R³,)
-                    print(f"    Mask Stage{stage} = {mask.shape}, non-empty = {mask.sum()}")
+                    if self.args.debug_verbose:
+                        print(f"    Mask Stage{stage} = {mask.shape}, non-empty = {mask.sum()}")
 
                     # 3. Generate all voxel centers in [-1, 1]^3 space
                     centers_k = self.generate_voxel_grid_centers(Rk)[0].cpu().numpy()  # shape: (R³, 3)
-                    print(f"    Centers Stage{stage} count = {centers_k.shape[0]}")
+                    if self.args.debug_verbose:
+                        print(f"    Centers Stage{stage} count = {centers_k.shape[0]}")
 
                     # 4. Filter centers using the non-empty mask
                     coords_k = centers_k[mask]  # shape: (V, 3), where V = number of non-empty voxels
@@ -191,10 +196,10 @@ class SaliencyMixin(VoxelGridCentersMixin):
                     "grad2": g3,
                 }
                 all_results.append(item)
-
-            print(f"--- Batch {batch_idx} end ---")
-
-        print("[test_compare_with_hooks] → Exiting method")
+            if self.args.debug_verbose:
+                print(f"--- Batch {batch_idx} end ---")
+        if self.args.debug_verbose:
+            print("[test_compare_with_hooks] → Exiting method")
         return all_results
 
     def inspect_saliency_results(self, item):

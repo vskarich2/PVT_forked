@@ -135,13 +135,13 @@ if __name__ == "__main__":
 
     parser.add_argument('--scanobject_compare', action='store_true', help='Use window attention')
 
-    parser.add_argument('--saliency', action='store_true', help='Generate saliency map')
     parser.add_argument('--conf_matrix', action='store_true', help='Generate confusion matrix')
 
     parser.add_argument('--weight_decay', type=float, default=1e-4,
                         help='Weight decay (L2 penalty)')
     parser.add_argument('--wandb', action='store_true', help='Use wandb')
     parser.add_argument('--use_dsva', action='store_true', help='Use DSVA')
+    parser.add_argument('--compute_saliency', action='store_true', help='Compute saliency')
     parser.add_argument('--use_python_fallback', action='store_true', help='Use python vs. CUDA C++ extensions.')
     parser.add_argument('--debug_verbose', action='store_true', help='Log debug.')
     parser.add_argument('--local_dev', action='store_true', help='Use dev dataset plus other dev-only things.')

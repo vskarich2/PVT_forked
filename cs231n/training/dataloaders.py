@@ -80,7 +80,7 @@ class DataLoaderMixin:
 
 
     def get_scanobject_test_loader(self):
-        if self.args.dataset == 'scanobjectnn' and (self.args.scanobject_compare or self.args.conf_matrix):
+        if self.args.dataset == 'scanobjectnn' and (self.args.scanobject_compare or self.args.compute_saliency or self.args.conf_matrix):
             ds = ScanObjectNNDatasetModified(
                 npoint=self.args.num_points,
                 partition='test',

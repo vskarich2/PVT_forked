@@ -72,7 +72,7 @@ class Trainer(
                              ]
         self.class_names = self.class_names_modelnet if self.args.dataset == "modelnet40" else self.class_names_scanobject
 
-        if self.args.scanobject_compare:
+        if self.args.compute_saliency:
             print("Registering hooks for saliency gradients!!")
             self.register_saliency_hooks()
             self.register_voxelization_hooks()
