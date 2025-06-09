@@ -267,7 +267,8 @@ class Trainer(
                     correct_by_class[yt] += 1
 
             accuracy_by_class = correct_by_class / (total_by_class + 1e-8)
-            accuracy_by_class = f"{accuracy_by_class:.4f}"
+            accuracy_by_class = np.round(accuracy_by_class, 4)
+
             df_class_metrics = pd.DataFrame({
                 "class": self.class_names,
                 "accuracy": accuracy_by_class,
