@@ -267,7 +267,6 @@ class Trainer(
                     correct_by_class[yt] += 1
 
             accuracy_by_class = correct_by_class / (total_by_class + 1e-8)
-            error_by_class = 1.0 - accuracy_by_class
 
             df_class_metrics = pd.DataFrame({
                 "class": self.class_names,
@@ -275,15 +274,13 @@ class Trainer(
                 "num_samples": total_by_class.astype(int)
             })
 
+            wandb_table = wandb.Table(dataframe=df_class_metrics)
+
             wandb.log({
                 "Per-Class Accuracy (w/ count)": wandb.plot_table(
                     "wandb/bar/v1",
-                    df_class_metrics,
+                    wandb_table,
                     {"x": "class", "y": "accuracy", "extra": ["num_samples"]}
-                ),
-                "Class Frequencies": wandb.plot.bar(
-                    pd.DataFrame({"class": self.class_names, "count": total_by_class.astype(int)}),
-                    "class", "count"
                 ),
                 "epoch": epoch
             })
