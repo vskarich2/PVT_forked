@@ -253,23 +253,25 @@ class SaliencyMixin(VoxelGridCentersMixin):
             c = item[f"coords{stage}"]
             if torch.is_tensor(c):
                 c = c.cpu().numpy()
-            all_xyz.append(c)               # (V_stage, 3)
+            # if saved as (3, V), transpose to (V, 3)
+            if isinstance(c, np.ndarray) and c.ndim == 2 and c.shape[0] == 3 and c.shape[1] != 3:
+                c = c.T
+            all_xyz.append(c)               # now (V_stage, 3)
 
-        # Extract and slice pointcloud to XYZ only
+        # 2) Extract and slice pointcloud to XYZ only
         if "pointcloud" in item:
             pts = item["pointcloud"]
             if torch.is_tensor(pts):
                 pts = pts.cpu().numpy()
-            # if extra channels (normals, etc.), keep only first 3 columns
             if pts.ndim == 2 and pts.shape[1] > 3:
                 pts = pts[:, :3]
             all_xyz.append(pts)
 
-        # concatenate for global bounds
+        # 3) Concatenate for global spatial bounds
         all_xyz = np.concatenate(all_xyz, axis=0)
         xyz_min, xyz_max = all_xyz.min(axis=0), all_xyz.max(axis=0)
 
-        # 2) Plot each stage
+        # 4) Plot each stage
         for i, stage in enumerate(stages):
             ax = fig.add_subplot(1, 3, i + 1, projection="3d")
 
@@ -277,8 +279,12 @@ class SaliencyMixin(VoxelGridCentersMixin):
             coords = item[f"coords{stage}"]
             if torch.is_tensor(coords):
                 coords = coords.cpu().numpy()
+            # if (3, V) transpose
+            if isinstance(coords, np.ndarray) and coords.ndim == 2 and coords.shape[0] == 3 and coords.shape[1] != 3:
+                coords = coords.T
 
-            # compute saliency\m            feat = item[f"feat{stage}"]
+            # compute saliency
+            feat = item[f"feat{stage}"]
             grad = item[f"grad{stage}"]
             if not torch.is_tensor(feat):
                 feat = torch.as_tensor(feat)
@@ -291,7 +297,7 @@ class SaliencyMixin(VoxelGridCentersMixin):
             # normalize per‐stage
             sal_norm = (sal - sal.min()) / (sal.max() - sal.min() + 1e-12)
 
-            # scatter voxels
+            # scatter voxels colored by saliency
             ax.scatter(
                 coords[:, 0], coords[:, 1], coords[:, 2],
                 c=sal_norm,
@@ -301,15 +307,15 @@ class SaliencyMixin(VoxelGridCentersMixin):
                 edgecolor="none"
             )
 
-            # overlay raw points (XYZ only)
+            # overlay raw point cloud (XYZ only)
             if "pointcloud" in item:
-                pts = item["pointcloud"]
-                if torch.is_tensor(pts):
-                    pts = pts.cpu().numpy()
-                if pts.ndim == 2 and pts.shape[1] > 3:
-                    pts = pts[:, :3]
+                pts_overlay = item["pointcloud"]
+                if torch.is_tensor(pts_overlay):
+                    pts_overlay = pts_overlay.cpu().numpy()
+                if pts_overlay.ndim == 2 and pts_overlay.shape[1] > 3:
+                    pts_overlay = pts_overlay[:, :3]
                 ax.scatter(
-                    pts[:, 0], pts[:, 1], pts[:, 2],
+                    pts_overlay[:, 0], pts_overlay[:, 1], pts_overlay[:, 2],
                     c=point_color,
                     s=1,
                     alpha=0.4
@@ -322,15 +328,15 @@ class SaliencyMixin(VoxelGridCentersMixin):
             ax.set_zlim(xyz_min[2], xyz_max[2])
             ax.view_init(elev=elev, azim=azim)
 
-        # single global colorbar
+        # 5) Single global colorbar
         m = plt.cm.ScalarMappable(cmap=voxel_cmap)
         m.set_array([])
         cbar = fig.colorbar(m, ax=fig.axes, fraction=0.02, pad=0.04)
         cbar.set_label("Saliency (normalized)", fontsize=12)
 
+        # 6) Suptitle with prediction info
         fig.suptitle(
             f"3-Stage Saliency & Pointcloud Overlay\n  (pred={item['pred']}  true={item['true']}  {item['classname']})",
             fontsize=16)
         plt.tight_layout(rect=[0, 0, 0.95, 0.92])
         plt.show()
-
