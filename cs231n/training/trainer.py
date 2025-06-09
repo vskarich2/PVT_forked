@@ -155,17 +155,13 @@ class Trainer(
                 outstr = 'Test :: test acc: %.6f, test avg acc: %.6f' % (test_acc, avg_per_class_acc)
                 print(outstr)
 
-    def test_one_epoch(
-            self,
-            epoch,
-            train_avg_loss,
-            best_test_acc
-    ):
+    def test_one_epoch(self, epoch, train_avg_loss, best_test_acc):
+        import pandas as pd
         test_loss = 0.0
         count = 0.0
         test_pred = []
         test_true = []
-        mis_examples = []  # will store up to 5 mis‐classified: (points, true_lbl, pred_lbl)
+        mis_examples = []
         self.model.eval()
 
         test_bar = tqdm(
@@ -175,12 +171,8 @@ class Trainer(
             unit="batch"
         )
         with torch.no_grad():
-
             for data, label, *maybe_class_name in test_bar:
-                if maybe_class_name:
-                    class_name = maybe_class_name[0]
-                else:
-                    class_name = "NONE"
+                class_name = maybe_class_name[0] if maybe_class_name else "NONE"
 
                 (feats, coords), label = self.preprocess_test_data(data, label)
                 feats = feats.to(self.device, non_blocking=True)
@@ -196,31 +188,31 @@ class Trainer(
                 test_true.append(label.cpu().numpy())
                 test_pred.append(preds.cpu().numpy())
 
-                # collect mis‐classifications (up to 5 total)
+                # save misclassified examples
                 if len(mis_examples) < 5:
                     diff = (preds != label).nonzero(as_tuple=False).squeeze(1)
                     for b in diff.tolist():
                         if len(mis_examples) >= 5:
                             break
-                        # coords[b]: (3, N_points) → transpose to (N_points,3)
                         pc = coords[b].cpu().numpy().T
                         mis_examples.append((pc, label[b].item(), preds[b].item()))
 
                 running_avg_loss = test_loss / count
                 test_bar.set_postfix(test_loss=running_avg_loss)
-
         test_bar.close()
 
-
-
-
-        # Confusion Matrix + W&B logging
+        # ───────────────────────────────────────────────────────────────
+        # Confusion matrix and W&B logging
+        # ───────────────────────────────────────────────────────────────
         if self.args.conf_matrix:
+            import seaborn as sns
+            import matplotlib.pyplot as plt
+            from sklearn.metrics import confusion_matrix
 
-            # aggregate all predictions / truths
             y_true = np.concatenate(test_true)
             y_pred = np.concatenate(test_pred)
 
+            # --- Log confusion matrix
             cm = confusion_matrix(y_true, y_pred, normalize="true")
             fig_cm, ax_cm = plt.subplots(figsize=(8, 6))
             sns.heatmap(
@@ -237,51 +229,68 @@ class Trainer(
             plt.yticks(rotation=0)
             plt.tight_layout()
 
-            wandb.log(
-                {
-                    f"Confusion Matrix/{self.args.dataset}":
-                     wandb.Image(fig_cm, caption=f"Epoch {epoch + 1} CM"),
-                    "epoch": epoch
-                }
-            )
+            wandb.log({
+                f"Confusion Matrix/{self.args.dataset}": wandb.Image(fig_cm, caption=f"Epoch {epoch + 1} CM"),
+                "epoch": epoch
+            })
             plt.close(fig_cm)
 
-            # 2) High-quality Mis‐classified examples
+            # --- Log misclassified examples (up to 5)
             imgs = []
-            for pc, t, p, in mis_examples:
-                # Color by height (z) for more visual detail
+            for pc, t, p in mis_examples:
                 colors = pc[:, 2]
                 fig = plt.figure(figsize=(4, 4), dpi=120)
                 ax = fig.add_subplot(111, projection='3d')
-                sc = ax.scatter(
-                    pc[:, 0], pc[:, 1], pc[:, 2],
-                    c=colors, cmap='viridis', s=12, alpha=0.9
-                )
-                eid = "Need ID"
-                ax.set_title(f"ID:{eid}  T:{self.class_names[t]} → P:{self.class_names[p]}", fontsize=10)
+                sc = ax.scatter(pc[:, 0], pc[:, 1], pc[:, 2], c=colors, cmap='viridis', s=12, alpha=0.9)
+                ax.set_title(f"T:{self.class_names[t]} → P:{self.class_names[p]}", fontsize=10)
                 ax.axis("off")
                 plt.colorbar(sc, ax=ax, shrink=0.6, label="Height")
                 plt.tight_layout()
                 imgs.append(wandb.Image(fig))
                 plt.close(fig)
-            # # Mis‐classified examples
-            # imgs = []
-            # for pc, t, p in mis_examples:
-            #     fig, ax = plt.subplots(subplot_kw={"projection": "3d"}, figsize=(3, 3))
-            #     ax.scatter(pc[:, 0], pc[:, 1], pc[:, 2], c="gray", s=2)
-            #     ax.set_title(f"T: {self.class_names[t]}\nP: {self.class_names[p]}", fontsize=8)
-            #     ax.axis("off")
-            #     imgs.append(wandb.Image(fig))
-            #     plt.close(fig)
 
-            wandb.log(
-                {
-                    f"Misclassifications/{self.args.dataset}": imgs,
-                    "epoch": epoch
-                }
-            )
+            wandb.log({
+                f"Misclassifications/{self.args.dataset}": imgs,
+                "epoch": epoch
+            })
 
-        # Compute scalar metrics and return
+            # ───────────────────────────────────────────────────────────────
+            # Per-class accuracy and frequency logging
+            # ───────────────────────────────────────────────────────────────
+            num_classes = len(self.class_names)
+            correct_by_class = np.zeros(num_classes)
+            total_by_class = np.zeros(num_classes)
+
+            for yt, yp in zip(y_true, y_pred):
+                total_by_class[yt] += 1
+                if yt == yp:
+                    correct_by_class[yt] += 1
+
+            accuracy_by_class = correct_by_class / (total_by_class + 1e-8)
+            error_by_class = 1.0 - accuracy_by_class
+
+            df_class_metrics = pd.DataFrame({
+                "class": self.class_names,
+                "accuracy": accuracy_by_class,
+                "num_samples": total_by_class.astype(int)
+            })
+
+            wandb.log({
+                "Per-Class Accuracy (w/ count)": wandb.plot_table(
+                    "wandb/bar/v1",
+                    df_class_metrics,
+                    {"x": "class", "y": "accuracy", "extra": ["num_samples"]},
+                    title="Per-Class Accuracy with Sample Count"
+                ),
+                "Class Frequencies": wandb.plot.bar(
+                    pd.DataFrame({"class": self.class_names, "count": total_by_class.astype(int)}),
+                    "class", "count",
+                    title="Number of Test Samples per Class"
+                ),
+                "epoch": epoch
+            })
+
+        # Final scalar metrics
         test_acc = self.check_stats(
             count,
             epoch,

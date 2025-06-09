@@ -74,7 +74,7 @@ class SaliencyMixin(VoxelGridCentersMixin):
         all_results = []
         total_true = []
         total_pred = []
-        ran_once = False
+        count = False
 
         for batch_idx, (data, label, classname) in enumerate(test_loader):
             if ran_once:
@@ -218,23 +218,21 @@ class SaliencyMixin(VoxelGridCentersMixin):
             print(f"   feat{stage}.shape   = {tuple(feat.shape)}, dtype = {feat.dtype}")
             print(f"   grad{stage}.shape   = {tuple(grad.shape)}, dtype = {grad.dtype}")
 
-    def plot_three_stage_saliency(self,
-                                  item,
-                                  voxel_cmap: str = "viridis",
-                                  point_color: str = "#888888",
-                                  elev: float = 20,
-                                  azim: float = 45,
-                                  figsize=(18, 6)):
+    def plot_three_stage_saliency(
+            self,
+            item,
+            elev: float = 20,
+            azim: float = 45,
+            voxel_cmap: str = "hot",
+            point_color: str = "dodgerblue",
+            figsize=(18, 6)):
         """
-        Given an `item` dict with keys:
-          'coords0','feat0','grad0',
-          'coords1','feat1','grad1',
-          'coords2','feat2','grad2',
-          'pointcloud'=N×D raw points (optional),
-        compute per‑voxel saliency = sum(|feat*grad|) and
-        plot 3 side‑by‑side 3D scatterplots:
-          • Voxels colored by normalized saliency
-          • Raw point cloud overlaid in gray
+        Render 3D saliency maps using glowing voxel heat and white point cloud overlay.
+        Requires item with:
+            'coords0', 'feat0', 'grad0',
+            'coords1', 'feat1', 'grad1',
+            'coords2', 'feat2', 'grad2',
+            'pointcloud': (optional) N×3
         """
         import numpy as np
         import torch
@@ -250,12 +248,11 @@ class SaliencyMixin(VoxelGridCentersMixin):
             c = item[f"coords{stage}"]
             if torch.is_tensor(c):
                 c = c.cpu().numpy()
-            # transpose if stored as (3, V)
-            if isinstance(c, np.ndarray) and c.ndim == 2 and c.shape[0] == 3 and c.shape[1] != 3:
+            if c.ndim == 2 and c.shape[0] == 3 and c.shape[1] != 3:
                 c = c.T
             all_xyz.append(c)
 
-        # 2) Include raw point cloud (XYZ only)
+        # 2) Include point cloud if available
         if "pointcloud" in item:
             pts = item["pointcloud"]
             if torch.is_tensor(pts):
@@ -263,8 +260,10 @@ class SaliencyMixin(VoxelGridCentersMixin):
             if pts.ndim == 2 and pts.shape[1] > 3:
                 pts = pts[:, :3]
             all_xyz.append(pts)
+        else:
+            pts = None
 
-        # 3) Compute global spatial bounds
+        # 3) Get global bounds
         all_xyz = np.concatenate(all_xyz, axis=0)
         xyz_min, xyz_max = all_xyz.min(axis=0), all_xyz.max(axis=0)
 
@@ -272,14 +271,14 @@ class SaliencyMixin(VoxelGridCentersMixin):
         for i, stage in enumerate(stages):
             ax = fig.add_subplot(1, 3, i + 1, projection="3d")
 
-            # fetch & normalize coords
+            # Fetch coords
             coords = item[f"coords{stage}"]
             if torch.is_tensor(coords):
                 coords = coords.cpu().numpy()
-            if isinstance(coords, np.ndarray) and coords.ndim == 2 and coords.shape[0] == 3 and coords.shape[1] != 3:
+            if coords.ndim == 2 and coords.shape[0] == 3 and coords.shape[1] != 3:
                 coords = coords.T
 
-            # fetch feats & grads
+            # Fetch feat & grad
             feat = item[f"feat{stage}"]
             grad = item[f"grad{stage}"]
             if not torch.is_tensor(feat):
@@ -287,51 +286,87 @@ class SaliencyMixin(VoxelGridCentersMixin):
             if not torch.is_tensor(grad):
                 grad = torch.as_tensor(grad)
 
-            # 4a) Align features to voxel axis
+            # Align shape: (V, C)
             V = coords.shape[0]
             if feat.dim() == 2 and feat.shape[1] == V and feat.shape[0] != V:
                 feat = feat.T
                 grad = grad.T
 
-            # 4b) Compute saliency per voxel
-            p = (feat.cpu() * grad.cpu()).abs()
-            if p.dim() == 1:
-                sal = p.numpy()
-            else:
-                sal = p.sum(dim=1).numpy()
-            sal_norm = (sal - sal.min()) / (sal.max() - sal.min() + 1e-12)
+            # Saliency = sum(|feat * grad|) per voxel
+            sal = (feat * grad).abs().sum(dim=1).cpu().numpy()
+            sal_norm = (sal - sal.min()) / (sal.max() - sal.min() + 1e-8)
 
-            # scatter voxels colored by saliency
+            # === Voxel saliency heat ===
             ax.scatter(
                 coords[:, 0], coords[:, 1], coords[:, 2],
                 c=sal_norm,
-                cmap=voxel_cmap,
-                s=25,
-                alpha=0.8,
-                edgecolor="none"
+                cmap="hot",
+                s=80,
+                alpha=1.0,
+                edgecolors='none'
             )
 
-            # overlay raw point cloud
-            if "pointcloud" in item:
-                pts_overlay = item["pointcloud"]
-                if torch.is_tensor(pts_overlay):
-                    pts_overlay = pts_overlay.cpu().numpy()
-                if pts_overlay.ndim == 2 and pts_overlay.shape[1] > 3:
-                    pts_overlay = pts_overlay[:, :3]
+            # === Point cloud overlay ===
+            if pts is not None:
                 ax.scatter(
-                    pts_overlay[:, 0], pts_overlay[:, 1], pts_overlay[:, 2],
+                    pts[:, 0], pts[:, 1], pts[:, 2],
                     c=point_color,
                     s=1,
-                    alpha=0.4
+                    alpha=1.0
                 )
 
-            # formatting
-            ax.set_title(f"Stage {stage}", fontsize=14)
-            ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
+            # === Styling ===
+            ax.set_xticks([]);
+            ax.set_yticks([]);
+            ax.set_zticks([])
             ax.set_xlim(xyz_min[0], xyz_max[0])
             ax.set_ylim(xyz_min[1], xyz_max[1])
             ax.set_zlim(xyz_min[2], xyz_max[2])
+            ax.set_box_aspect([1, 1, 1])
             ax.view_init(elev=elev, azim=azim)
+            ax.set_facecolor("black")
+            fig.patch.set_facecolor("black")
+            ax.set_title(f"Stage {stage}", color='white', fontsize=14)
+
+        # Optional: add a single global colorbar
+        mappable = plt.cm.ScalarMappable(cmap="hot")
+        mappable.set_array([])
+        cbar = fig.colorbar(mappable, ax=fig.axes, fraction=0.02, pad=0.04)
+        cbar.set_label("Saliency (normalized)", fontsize=12, color='white')
+        cbar.ax.yaxis.set_tick_params(color='white')
+        plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='white')
+
+        fig.suptitle(
+            f"3-Stage Saliency & Pointcloud Overlay\n"
+            f"(pred={item['pred']}  {self.class_names[int(item['pred'])]}  "
+            f"true={item['true']}  {item['classname']})",
+            fontsize=16,
+            color='white'
+        )
+        plt.tight_layout(rect=[0, 0, 0.95, 0.92])
+        plt.show()
+
+        # overlay raw point cloud
+        if "pointcloud" in item:
+            pts_overlay = item["pointcloud"]
+            if torch.is_tensor(pts_overlay):
+                pts_overlay = pts_overlay.cpu().numpy()
+            if pts_overlay.ndim == 2 and pts_overlay.shape[1] > 3:
+                pts_overlay = pts_overlay[:, :3]
+            ax.scatter(
+                pts_overlay[:, 0], pts_overlay[:, 1], pts_overlay[:, 2],
+                c=point_color,
+                s=1,
+                alpha=0.4
+            )
+
+        # formatting
+        ax.set_title(f"Stage {stage}", fontsize=14)
+        ax.set_xlabel("X"); ax.set_ylabel("Y"); ax.set_zlabel("Z")
+        ax.set_xlim(xyz_min[0], xyz_max[0])
+        ax.set_ylim(xyz_min[1], xyz_max[1])
+        ax.set_zlim(xyz_min[2], xyz_max[2])
+        ax.view_init(elev=elev, azim=azim)
 
         # 5) Global colorbar
         m = plt.cm.ScalarMappable(cmap=voxel_cmap)
@@ -339,10 +374,3 @@ class SaliencyMixin(VoxelGridCentersMixin):
         cbar = fig.colorbar(m, ax=fig.axes, fraction=0.02, pad=0.04)
         cbar.set_label("Saliency (normalized)", fontsize=12)
 
-        # 6) Suptitle
-        fig.suptitle(
-            f"3-Stage Saliency & Pointcloud Overlay\n  (pred={item['pred']}  true={item['true']}  {item['classname']})",
-            fontsize=16
-        )
-        plt.tight_layout(rect=[0, 0, 0.95, 0.92])
-        plt.show()
