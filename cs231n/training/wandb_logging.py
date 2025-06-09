@@ -8,6 +8,18 @@ class WandbMixin:
     Mixin providing a method to initialize a Weights & Biases run.
     Assumes the inheriting class has `self.checkpoint_folder` and `self.args` attributes.
     """
+
+    def log_saliency(self, saliency_items, epoch):
+        saliency_images = [
+            self.plot_three_stage_saliency_wandb(item)
+            for item in saliency_items
+        ]
+
+        wandb.log({
+            "Saliency Examples": saliency_images,
+            "epoch": epoch
+        })
+
     def log_per_class_accuracies(self, test_true, test_pred, epoch):
 
         y_true = np.concatenate(test_true)

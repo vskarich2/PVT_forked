@@ -156,12 +156,12 @@ class Trainer(
                 print(outstr)
 
     def test_one_epoch(self, epoch, train_avg_loss, best_test_acc):
-        import pandas as pd
         test_loss = 0.0
         count = 0.0
         test_pred = []
         test_true = []
         mis_examples = []
+        correct_items, incorrect_items = [], []
         self.model.eval()
 
         test_bar = tqdm(
@@ -183,15 +183,17 @@ class Trainer(
                 loss = self.criterion(logits, label)
                 test_loss += loss.item()
                 preds = logits.argmax(dim=1)
-
-                count += 1.0
-                test_true.append(label.cpu().numpy())
-                test_pred.append(preds.cpu().numpy())
-
                 self.save_misclassified(coords, label, mis_examples, preds)
 
-                running_avg_loss = test_loss / count
-                test_bar.set_postfix(test_loss=running_avg_loss)
+            count += 1.0
+            test_true.append(label.cpu().numpy())
+            test_pred.append(preds.cpu().numpy())
+
+            saliency_examples = self.collect_saliency_examples()
+
+
+            running_avg_loss = test_loss / count
+            test_bar.set_postfix(test_loss=running_avg_loss)
 
         test_bar.close()
 

@@ -1,6 +1,7 @@
 import numpy as np
 import sklearn.metrics as metrics
 import torch
+import wandb
 from matplotlib import pyplot as plt
 
 import modules
@@ -202,6 +203,37 @@ class SaliencyMixin(VoxelGridCentersMixin):
             print("[test_compare_with_hooks] → Exiting method")
         return all_results
 
+
+    def collect_saliency_examples(self, max_per_class=5):
+        self.model.eval()
+        correct_items, incorrect_items = [], []
+
+        with torch.no_grad():
+            for data, label, *maybe_class_name in self.test_loader:
+                class_name = maybe_class_name[0] if maybe_class_name else ["NONE"] * len(label)
+
+                (feats, coords), label = self.preprocess_test_data(data, label)
+                feats = feats.to(self.device)
+                label = label.to(self.device)
+
+                preds = self.model(feats).argmax(dim=1)
+
+                for i in range(len(label)):
+                    cname = class_name[i] if isinstance(class_name, (list, tuple)) else class_name
+                    item = (data[i], label[i], cname)
+
+                    if preds[i] == label[i]:
+                        if len(correct_items) < max_per_class:
+                            correct_items.append(item)
+                    else:
+                        if len(incorrect_items) < max_per_class:
+                            incorrect_items.append(item)
+
+                    if len(correct_items) >= max_per_class and len(incorrect_items) >= max_per_class:
+                        return correct_items + incorrect_items
+
+        return correct_items + incorrect_items  # fallback in case fewer examples
+
     def generate_saliency_from_items(self, selected_items):
         print("[generate_saliency_from_items] → Starting")
         self.model.eval()
@@ -272,6 +304,131 @@ class SaliencyMixin(VoxelGridCentersMixin):
             print(f"   coords{stage}.shape = {coords.shape}, dtype = {coords.dtype}")
             print(f"   feat{stage}.shape   = {tuple(feat.shape)}, dtype = {feat.dtype}")
             print(f"   grad{stage}.shape   = {tuple(grad.shape)}, dtype = {grad.dtype}")
+
+    def plot_three_stage_saliency_wandb(
+            self,
+            item,
+            elev: float = 20,
+            azim: float = 45,
+            voxel_cmap: str = "hot",
+            point_color: str = "dodgerblue",
+            figsize=(18, 6)
+    ):
+        """
+        Render 3D saliency maps using glowing voxel heat and point cloud overlay.
+        Returns: wandb.Image for logging.
+        """
+        import numpy as np
+        import torch
+        import matplotlib.pyplot as plt
+        import io
+        from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
+
+        stages = [0, 1, 2]
+        fig = plt.figure(figsize=figsize)
+
+        # --- 1) Global bounds
+        all_xyz = []
+        for stage in stages:
+            c = item[f"coords{stage}"]
+            if torch.is_tensor(c):
+                c = c.cpu().numpy()
+            if c.ndim == 2 and c.shape[0] == 3 and c.shape[1] != 3:
+                c = c.T
+            all_xyz.append(c)
+
+        if "pointcloud" in item:
+            pts = item["pointcloud"]
+            if torch.is_tensor(pts):
+                pts = pts.cpu().numpy()
+            if pts.ndim == 2 and pts.shape[1] > 3:
+                pts = pts[:, :3]
+            all_xyz.append(pts)
+        else:
+            pts = None
+
+        all_xyz = np.concatenate(all_xyz, axis=0)
+        xyz_min, xyz_max = all_xyz.min(axis=0), all_xyz.max(axis=0)
+
+        # --- 2) Plot each stage
+        for i, stage in enumerate(stages):
+            ax = fig.add_subplot(1, 3, i + 1, projection="3d")
+
+            coords = item[f"coords{stage}"]
+            if torch.is_tensor(coords):
+                coords = coords.cpu().numpy()
+            if coords.ndim == 2 and coords.shape[0] == 3 and coords.shape[1] != 3:
+                coords = coords.T
+
+            feat = torch.as_tensor(item[f"feat{stage}"])
+            grad = torch.as_tensor(item[f"grad{stage}"])
+
+            V = coords.shape[0]
+            if feat.dim() == 2 and feat.shape[1] == V and feat.shape[0] != V:
+                feat = feat.T
+                grad = grad.T
+
+            sal = (feat * grad).abs().sum(dim=1).cpu().numpy()
+            sal_norm = (sal - sal.min()) / (sal.max() - sal.min() + 1e-8)
+
+            ax.scatter(
+                coords[:, 0], coords[:, 1], coords[:, 2],
+                c=sal_norm,
+                cmap=voxel_cmap,
+                s=80,
+                alpha=1.0,
+                edgecolors='none'
+            )
+
+            if pts is not None:
+                ax.scatter(
+                    pts[:, 0], pts[:, 1], pts[:, 2],
+                    c=point_color,
+                    s=1,
+                    alpha=1.0
+                )
+
+            ax.set_xticks([])
+            ax.set_yticks([])
+            ax.set_zticks([])
+            ax.set_xlim(xyz_min[0], xyz_max[0])
+            ax.set_ylim(xyz_min[1], xyz_max[1])
+            ax.set_zlim(xyz_min[2], xyz_max[2])
+            ax.set_box_aspect([1, 1, 1])
+            ax.view_init(elev=elev, azim=azim)
+            ax.set_facecolor("black")
+            fig.patch.set_facecolor("black")
+            ax.set_title(f"Stage {stage}", color='white', fontsize=14)
+
+        # --- 3) Global colorbar
+        mappable = plt.cm.ScalarMappable(cmap=voxel_cmap)
+        mappable.set_array([])
+        cbar = fig.colorbar(mappable, ax=fig.axes, fraction=0.02, pad=0.04)
+        cbar.set_label("Saliency (normalized)", fontsize=12, color='white')
+        cbar.ax.yaxis.set_tick_params(color='white')
+        plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='white')
+
+        # --- 4) Title
+        fig.suptitle(
+            f"3-Stage Saliency & Pointcloud Overlay\n"
+            f"(pred={item['pred']}  {self.class_names[int(item['pred'])]}  "
+            f"true={item['true']}  {item['classname']})",
+            fontsize=16,
+            color='white'
+        )
+        plt.tight_layout(rect=[0, 0, 0.95, 0.92])
+
+        # --- 5) Return as wandb.Image
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', bbox_inches='tight')
+        buf.seek(0)
+        wandb_img = wandb.Image(
+            buf,
+            caption=f"pred={item['pred']} ({self.class_names[int(item['pred'])]}) → "
+                    f"true={item['true']} ({item['classname']})"
+        )
+        plt.close(fig)
+        return wandb_img
 
     def plot_three_stage_saliency(
             self,
