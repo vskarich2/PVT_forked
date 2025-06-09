@@ -41,39 +41,31 @@ class SaliencyMixin(VoxelGridCentersMixin):
 
 
     def register_saliency_hooks(self):
-        # (B) Prepare lists (or any containers) to store activations & gradients:
-        self.model._attn_acts = []  # will collect forward outputs from each SparseDynamicVoxelAttention
-        self.model._attn_grads = []  # will collect backward grads from each SparseDynamicVoxelAttention
+        # prepare our buffers
+        self.model._attn_acts = []   # list of activation tensors
+        self.model._attn_grads = []  # list of gradient tensors
 
-        # (C) Define hook functions:
         def _forward_hook(module, inp, out):
-            # `module` is the SparseDynamicVoxelAttention instance;
-            # `out` is its forward result (a list of length B, each of shape [Vʼ, D]).
-            # Normalize to a list of tensors
-            if isinstance(out, torch.Tensor):
-                outs = [out]
-            else:
-                outs = list(out)
+            # normalize to a list of tensors
+            outs = [out] if torch.is_tensor(out) else list(out)
 
-            # Detach and store each tensor
             for t in outs:
+                # 1) save the activation
                 self.model._attn_acts.append(t.detach().cpu())
 
-        def _backward_hook(module, grad_in, grad_out):
-            #`grad_out[0]` is the gradient of the loss w.r.t. that module’s output.
-            print("_backward_hook before")
-            print(grad_out.shape)
-            self.model._attn_grads.append(grad_out[0].detach().cpu())
-            print("_backward_hook after")
+                # 2) register a hook on THAT tensor to grab its grad on backward
+                def _grab_grad(grad, idx=len(self.model._attn_grads)):
+                    # this will run during .backward()
+                    self.model._attn_grads.insert(idx, grad.detach().cpu())
 
+                t.register_hook(_grab_grad)
 
-        # (D) Walk through the model, find every SparseDynamicVoxelAttention, and register:
+        # walk and attach only the forward hooks
         for name, submod in self.model.named_modules():
             if isinstance(submod, SparseDynamicVoxelAttention):
                 submod.register_forward_hook(_forward_hook)
-                submod.register_full_backward_hook(_backward_hook)
 
-    # Inject detailed shape-printing and comments into test_compare_with_hooks
+        # no module‐level backward hooks needed any more
 
     def test_compare_with_hooks(self):
         print("[test_compare_with_hooks] → Entering method")
