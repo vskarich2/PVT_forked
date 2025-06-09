@@ -13,7 +13,7 @@ def trilinear_devoxelize_forward_cpu(features, coords, resolution):
     """
     # reuse your existing trilinear_devoxelize_cpu logic, but return also inds & weights
     outs = trilinear_devoxelize_cpu(
-        grid=features.view(features.size(0), features.size(1), resolution, resolution, resolution),
+        grid=features.reshape(features.size(0), features.size(1), resolution, resolution, resolution),
         coords=coords,
         resolution=resolution,
         training=False
@@ -43,7 +43,7 @@ def trilinear_devoxelize_backward_cpu(grad_out, coords, resolution):
     # compute flat voxel indices
     idx = coords.long()
     flat_idx = idx[...,0]*R*R + idx[...,1]*R + idx[...,2]  # (B, N)
-    grad_flat = grad_out.view(B, C, -1)
+    grad_flat = grad_out.reshape(B, C, -1)
     # gather
     grad_feats = torch.gather(
         grad_flat, 2,
@@ -114,7 +114,7 @@ def avg_voxelize_forward_cpu(
 
     # --- step 5: reshape back to 3D voxel grid ---
     # from (B, C, R^3) → (B, C, R, R, R)
-    out = out_flat.view(B, C, R, R, R)
+    out = out_flat.reshape(B, C, R, R, R)
 
     return out, flat_idx, counts
 
@@ -140,7 +140,7 @@ def avg_voxelize_backward_cpu(
     N = flat_idx.shape[1]
 
     # flatten grad_out to (B, C, R^3)
-    grad_flat = grad_out.view(B, C, -1)
+    grad_flat = grad_out.reshape(B, C, -1)
     grad_features = torch.zeros(B, C, N, device=grad_out.device, dtype=grad_out.dtype)
 
     for b in range(B):
@@ -180,7 +180,7 @@ def trilinear_devoxelize_cpu(grid, coords, resolution: int, training: bool = Fal
     _, N, _ = coords.shape
 
     # Flatten spatial dims for easy gather:
-    grid_flat = grid.view(B, C, -1)  # (B, C, R^3)
+    grid_flat = grid.reshape(B, C, -1)  # (B, C, R^3)
 
     # Clamp coords just in case:
     coords_clamped = coords.clamp(0, R - 1)
@@ -281,7 +281,7 @@ def sparse_window_attention_cpu(
     assert C == num_heads * head_dim, "C must equal num_heads*head_dim"
 
     # 1) split into heads
-    x = voxel_feats.view(B, N, num_heads, head_dim)            # (B, N, H, d_h)
+    x = voxel_feats.reshape(B, N, num_heads, head_dim)            # (B, N, H, d_h)
     x = x.permute(0, 2, 1, 3)                                  # (B, H, N, d_h)
 
     # 2) compute Q, K, V (here identity projections)
@@ -299,7 +299,7 @@ def sparse_window_attention_cpu(
 
     # 5) merge heads back
     out = out.permute(0, 2, 1, 3).contiguous()                 # (B, N, H, d_h)
-    out = out.view(B, N, C)                                    # (B, N, C)
+    out = out.reshape(B, N, C)                                    # (B, N, C)
 
     return out
 

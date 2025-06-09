@@ -281,7 +281,7 @@ class Trainer(
             wandb_table = wandb.Table(dataframe=df_class_metrics)
 
             wandb.log({
-                "Per-Class Accuracy (w/ count)": wandb.plot_table(
+                "Per-Class Accuracy": wandb.plot_table(
                     "wandb/bar/v1",
                     wandb_table,
                     {"x": "class", "y": "accuracy", "extra": ["num_samples"]}
