@@ -279,13 +279,11 @@ class Trainer(
                 "Per-Class Accuracy (w/ count)": wandb.plot_table(
                     "wandb/bar/v1",
                     df_class_metrics,
-                    {"x": "class", "y": "accuracy", "extra": ["num_samples"]},
-                    title="Per-Class Accuracy with Sample Count"
+                    {"x": "class", "y": "accuracy", "extra": ["num_samples"]}
                 ),
                 "Class Frequencies": wandb.plot.bar(
                     pd.DataFrame({"class": self.class_names, "count": total_by_class.astype(int)}),
-                    "class", "count",
-                    title="Number of Test Samples per Class"
+                    "class", "count"
                 ),
                 "epoch": epoch
             })

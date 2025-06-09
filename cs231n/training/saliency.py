@@ -202,6 +202,56 @@ class SaliencyMixin(VoxelGridCentersMixin):
             print("[test_compare_with_hooks] → Exiting method")
         return all_results
 
+    def generate_saliency_from_items(self, selected_items):
+        print("[generate_saliency_from_items] → Starting")
+        self.model.eval()
+        results = []
+
+        for item_idx, (data, label, classname) in enumerate(selected_items):
+            orig_data = data.detach().cpu().clone()
+            feats, coords = self.preprocess_test_data(data.unsqueeze(0), label.unsqueeze(0))[0]
+            feats = feats.to(self.device)
+            coords = coords.to(self.device)
+            label = label.to(self.device)
+
+            self.model.zero_grad()
+            self.model._attn_acts.clear()
+            self.model._attn_grads.clear()
+
+            # Forward
+            out = self.model(feats)
+            pred = out.argmax(dim=1).item()
+            scalar_logit = out[0, pred]
+            scalar_logit.backward()
+
+            a1 = self.model._attn_acts[0].cpu()
+            a2 = self.model._attn_acts[1].cpu()
+            a3 = self.model._attn_acts[2].cpu()
+            g1 = self.model._attn_grads[0].cpu()
+            g2 = self.model._attn_grads[1].cpu()
+            g3 = self.model._attn_grads[2].cpu()
+
+            coords_list = []
+            for stage in range(3):
+                vox_feats = self._last_voxel_feats[stage][0:1]
+                Rk = vox_feats.shape[2]
+                mask = modules.voxel_encoder.extract_non_empty_voxel_mask(vox_feats, self.args)[0].cpu().numpy().astype(
+                    bool)
+                centers = self.generate_voxel_grid_centers(Rk)[0].cpu().numpy()
+                coords_k = centers[mask]
+                coords_list.append(coords_k)
+
+            results.append({
+                "pred": pred,
+                "true": label.item(),
+                "classname": classname,
+                "pointcloud": orig_data.numpy(),
+                "coords0": coords_list[0], "feat0": a1, "grad0": g1,
+                "coords1": coords_list[1], "feat1": a2, "grad1": g2,
+                "coords2": coords_list[2], "feat2": a3, "grad2": g3
+            })
+        return results
+
     def inspect_saliency_results(self, item):
         """
         For each entry in results, print out:
