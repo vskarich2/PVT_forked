@@ -62,13 +62,11 @@ class StatsMixin:
     def log_gradient_and_param_statistics(
             self,
             epoch=None,
-            step=None,
             detect_anomalies=True
     ):
         import wandb
         grad_stats = {}
         param_stats = {}
-        global_step = step if step is not None else epoch
 
         total_grad_norm_sq = 0.0
         total_param_norm_sq = 0.0
@@ -113,7 +111,7 @@ class StatsMixin:
         param_stats["param/global_l2_norm"] = total_param_norm_sq ** 0.5
 
         # Logging to wandb
-        wandb.log({**grad_stats, **param_stats}, step=global_step)
+        wandb.log({**grad_stats, **param_stats}, epoch=epoch)
 
         # Print anomaly diagnostics
         if detect_anomalies:
