@@ -58,7 +58,7 @@ class SaliencyMixin(VoxelGridCentersMixin):
             # Detach and store each tensor
             for t in outs:
                 self.model._attn_acts.append(t.detach().cpu())
-            
+
         def _backward_hook(module, grad_in, grad_out):
             #`grad_out[0]` is the gradient of the loss w.r.t. that module’s output.
             print("_backward_hook before")
