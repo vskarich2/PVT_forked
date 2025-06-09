@@ -173,11 +173,11 @@ if __name__ == "__main__":
         print("Making confusion matrix for scanobject")
         trainer.make_confusion_matrix_for_scanobject()
     elif args.scanobject_compare and args.dataset == "scanobjectnn" and args.eval:
-        # print("Running saliency map data logic for scanobject")
-        # import pickle
-        # all_results = pickle.load(open('/Users/vskarich/cs231n_final_project/PVT_forked_repo/PVT_forked/saliency_results.pkl', 'rb'))
-        #trainer.plot_three_stage_saliency(all_results[0])  # etc.
-        trainer.test_compare_with_hooks()
+        print("Running saliency map data logic for scanobject")
+        import pickle
+        all_results = pickle.load(open('/Users/vskarich/cs231n_final_project/PVT_forked_repo/PVT_forked/saliency_results.pkl', 'rb'))
+        trainer.plot_three_stage_saliency(all_results[0])  # etc.
+        #trainer.test_compare_with_hooks()
 
     else:
         print("Running stand-alone test!!")

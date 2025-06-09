@@ -154,32 +154,39 @@ class SaliencyMixin(VoxelGridCentersMixin):
                 print(f"    Stage1 a2={a2.shape}, g2={g2.shape}")
                 print(f"    Stage2 a3={a3.shape}, g3={g3.shape}")
 
-                # compute non‐empty masks using the STASHED batch feats
+                # Pre-allocate stage-wise values
+                coords_list = []
                 for stage in range(3):
-                    vox_feats = batch_voxel_feats[stage][i: i + 1]  # (1, C, R, R, R)
-                    mask = modules.voxel_encoder.extract_non_empty_voxel_mask(vox_feats, self.args)
-                    print(f"    Mask Stage{stage}={mask.shape}")
+                    # 1. Extract voxel features for this sample
+                    vox_feats = batch_voxel_feats[stage][i: i + 1]  # Shape: (1, C, R, R, R)
+                    Rk = vox_feats.shape[2]
 
-                # recover centers once more
-                for stage in range(3):
-                    Rk = batch_voxel_feats[stage].shape[2]
-                    # Compute voxel centers in normalized [-1, 1]^3 space
-                    centers_k = self.generate_voxel_grid_centers(Rk)[0].cpu().numpy()
-                    print(f"    Centers Stage{stage} count={centers_k.shape[0]}")
+                    # 2. Compute non-empty voxel mask → shape: (1, R³)
+                    mask = modules.voxel_encoder.extract_non_empty_voxel_mask(vox_feats, self.args)  # (1, R³)
+                    mask = mask[0].cpu().numpy().astype(bool)  # → shape: (R³,)
+                    print(f"    Mask Stage{stage} = {mask.shape}, non-empty = {mask.sum()}")
 
-                # build and store the result dict, now including original pointcloud
+                    # 3. Generate all voxel centers in [-1, 1]^3 space
+                    centers_k = self.generate_voxel_grid_centers(Rk)[0].cpu().numpy()  # shape: (R³, 3)
+                    print(f"    Centers Stage{stage} count = {centers_k.shape[0]}")
+
+                    # 4. Filter centers using the non-empty mask
+                    coords_k = centers_k[mask]  # shape: (V, 3), where V = number of non-empty voxels
+                    coords_list.append(coords_k)
+
+                # 5. Build and store the result dict
                 item = {
                     "pred": pred_i,
                     "true": label[i].item(),
                     "classname": classname[i],
                     "pointcloud": orig_data[i].numpy(),
-                    "coords0": batch_voxel_coords[0][i].numpy(),
+                    "coords0": coords_list[0],
                     "feat0": a1,
                     "grad0": g1,
-                    "coords1": batch_voxel_coords[1][i].numpy(),
+                    "coords1": coords_list[1],
                     "feat1": a2,
                     "grad1": g2,
-                    "coords2": batch_voxel_coords[2][i].numpy(),
+                    "coords2": coords_list[2],
                     "feat2": a3,
                     "grad2": g3,
                 }
