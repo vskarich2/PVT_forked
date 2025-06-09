@@ -176,7 +176,7 @@ class SaliencyMixin(VoxelGridCentersMixin):
                 # recover centers
                 for stage in range(3):
                     Rk = self._last_voxel_feats[stage].shape[2]  # resolution
-                    centers_k = self.generate_voxel_grid_centers(Rk, self.args)[0].numpy()
+                    centers_k = self.generate_voxel_grid_centers(Rk)[0].numpy()
                     print(f"    Centers Stage {stage} shape={centers_k.shape}  # (R{stage}^3, 3)")
 
                 # build item
