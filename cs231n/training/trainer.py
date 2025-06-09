@@ -267,12 +267,15 @@ class Trainer(
                     correct_by_class[yt] += 1
 
             accuracy_by_class = correct_by_class / (total_by_class + 1e-8)
-
+            accuracy_by_class = f"{accuracy_by_class:.4f}"
             df_class_metrics = pd.DataFrame({
                 "class": self.class_names,
                 "accuracy": accuracy_by_class,
                 "num_samples": total_by_class.astype(int)
             })
+
+            # Sort by accuracy (ascending)
+            df_class_metrics = df_class_metrics.sort_values(by="accuracy", ascending=True)
 
             wandb_table = wandb.Table(dataframe=df_class_metrics)
 
