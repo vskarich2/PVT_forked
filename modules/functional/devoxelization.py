@@ -37,7 +37,6 @@ class TrilinearDevoxelization(Function):
             gradient of inputs, FloatTensor[B, C, R, R, R]
         """
         inds, wgts = ctx.saved_tensors
-        print("GOT HERE")
         grad_inputs = _backend.trilinear_devoxelize_backward(grad_output.contiguous(), inds, wgts, ctx.r)
         return grad_inputs.view(grad_output.size(0), grad_output.size(1), ctx.r, ctx.r, ctx.r), None, None, None, None
 
