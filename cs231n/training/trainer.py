@@ -138,12 +138,14 @@ class Trainer(
                 test_pred.append(preds.cpu().numpy())
                 running_avg_loss = test_loss / count
                 test_bar.set_postfix(test_loss=running_avg_loss)
-        
+
         # Must be outside of no_grad
         if self.args.compute_saliency and self.args.wandb:
             saliency_examples = self.collect_saliency_examples()
+            torch.set_grad_enabled(True)
             saliency_items = self.generate_saliency_from_items(saliency_examples)
             self.log_saliency(saliency_items, epoch)
+            torch.set_grad_enabled(False)  # reset
 
         test_bar.close()
 

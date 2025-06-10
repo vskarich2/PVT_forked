@@ -61,25 +61,7 @@ class SparseDynamicVoxelAttention(nn.Module):
             coord = voxel_coords[b][mask[b]]  # → (Vʼ, 3)
             Vp = token.size(0)  # Vʼ = number of non-empty voxels
 
-            # # ——— 2) Compute all-pairs distances among the Vʼ voxel centers ————
-            # # unsqueeze to (1, Vʼ, 3), so cdist returns (1, Vʼ, Vʼ)
-            # dist = torch.cdist(
-            #     coord.unsqueeze(0),
-            #     coord.unsqueeze(0),
-            #     p=2
-            # )  # → (1, Vʼ, Vʼ)
-            #
-            # # ——— 3) Get k_knn nearest *other* voxels for each anchor ————————
-            # # +1 because the nearest neighbor of each point is itself (dist=0)
-            # # .indices gives shape (1, Vʼ, k_knn+1), then we drop index 0
-            # knn_idx = dist.topk(
-            #     k=self.knn_size + 1,
-            #     dim=-1,
-            #     largest=False
-            # ).indices[:, :, 1:]  # → (1, Vʼ, k_knn)
 
-            # ——— 2) Compute all-pairs distances among the V' voxel centers ————
-            #    First squeeze to shape (V', V')
             dist = torch.cdist(
                 coord.unsqueeze(0),
                 coord.unsqueeze(0),
@@ -111,17 +93,6 @@ class SparseDynamicVoxelAttention(nn.Module):
                 knn_idx = torch.zeros(0, self.knn_size, dtype=torch.long, device=voxel_tokens.device)
 
             # ——— 4) Gather the neighbor tokens & coords ————————————————
-
-            # # Helper that does for you: x_neighbors[i,j,:] = x[j, knn_idx[i,j]]
-            # knn_tokens = gather_neighbors_by_indices(
-            #     token.unsqueeze(0),  # (1, Vʼ, D)
-            #     knn_idx  # (1, Vʼ, k_knn)
-            # )  # → (1, Vʼ, k_knn, D)
-            #
-            # knn_coords = gather_neighbors_by_indices(
-            #     coord.unsqueeze(0),  # (1, Vʼ, 3)
-            #     knn_idx
-            # )  # → (1, Vʼ, k_knn, 3)
 
             # Helper that does for you: x_neighbors[i,j,:] = x[j, knn_idx[i,j]]
             knn_tokens = gather_neighbors_by_indices(
@@ -229,7 +200,6 @@ class CrossAttention(nn.Module):
         attn_output = attn_output.transpose(1, 2).contiguous().view(B, V, D)
         return self.out_proj(attn_output)
 
-
 def gather_neighbors_by_indices(tokens, indices):
     B, V, D = tokens.shape
     B2, Vq, k = indices.shape
@@ -238,14 +208,4 @@ def gather_neighbors_by_indices(tokens, indices):
     expanded_tokens = tokens.unsqueeze(1).expand(-1, Vq, -1, -1)
     gathered = torch.gather(expanded_tokens, 2, expanded_indices)
     return gathered
-
-
-# # Example usage with dummy data
-# B, R, D, V = 2, 8, 64, 512
-# tokens = torch.randn(B, V, D)
-# coords = torch.randn(B, V, 3)
-# mask = torch.rand(B, V) > 0.3  # simulate ~70% non-empty voxels
-#
-# sparse_attn = SparseDynamicVoxelAttention(dim=D)
-# updated = sparse_attn(tokens, coords, mask)
 
