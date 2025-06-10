@@ -45,6 +45,7 @@ class SaliencyMixin(VoxelGridCentersMixin):
 
             for t in out:
                 # 1) save the activation
+                t.requires_grad_(True)
                 self.model._attn_acts.append(t.detach().cpu())
 
                 # 2) register a hook on THAT tensor to grab its grad on backward
