@@ -139,12 +139,6 @@ class Trainer(
                 running_avg_loss = test_loss / count
                 test_bar.set_postfix(test_loss=running_avg_loss)
 
-        # Must be outside of no_grad
-        if self.args.compute_saliency and self.args.wandb:
-            with torch.enable_grad():
-                saliency_examples = self.collect_saliency_examples()
-                saliency_items = self.generate_saliency_from_items(saliency_examples)
-                self.log_saliency(saliency_items, epoch)
 
 
         test_bar.close()
@@ -215,6 +209,13 @@ class Trainer(
         # Log gradient and param stats
         #if self.args.wandb:
             #self.log_gradient_and_param_statistics(epoch=epoch)
+
+        # Must be outside of no_grad
+        if self.args.compute_saliency and self.args.wandb:
+            with torch.enable_grad():
+                saliency_examples = self.collect_saliency_examples()
+                saliency_items = self.generate_saliency_from_items(saliency_examples)
+                self.log_saliency(saliency_items, epoch)
 
         # Close training bar for this epoch
         train_bar.close()
