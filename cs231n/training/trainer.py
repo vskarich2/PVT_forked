@@ -140,8 +140,6 @@ class Trainer(
                 running_avg_loss = test_loss / count
                 test_bar.set_postfix(test_loss=running_avg_loss)
 
-
-
         test_bar.close()
 
         # ───────────────────────────────────────────────────────────────

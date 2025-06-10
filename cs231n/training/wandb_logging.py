@@ -40,7 +40,7 @@ class WandbMixin:
         log_dict = {"epoch": epoch}
 
         for i, cls in enumerate(self.class_names):
-            log_dict[f"acc/{cls}"] = float(accuracy_by_class[i])
+            log_dict[f"{cls}"] = float(accuracy_by_class[i])
 
         wandb.log(log_dict)
 
