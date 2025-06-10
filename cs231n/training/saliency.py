@@ -204,35 +204,33 @@ class SaliencyMixin(VoxelGridCentersMixin):
         self.model.eval()
         correct_items, incorrect_items = [], []
 
-        with torch.no_grad():
-            for data, label, *maybe_class_name in self.test_loader:
-                class_name = maybe_class_name[0] if maybe_class_name else ["NONE"] * len(label)
+        for data, label, *maybe_class_name in self.test_loader:
+            class_name = maybe_class_name[0] if maybe_class_name else ["NONE"] * len(label)
 
-                (feats, coords), label = self.preprocess_test_data(data, label)
-                feats = feats.to(self.device)
-                label = label.to(self.device)
+            (feats, coords), label = self.preprocess_test_data(data, label)
+            feats = feats.to(self.device)
+            label = label.to(self.device)
 
-                preds = self.model(feats).argmax(dim=1)
+            preds = self.model(feats).argmax(dim=1)
 
-                for i in range(len(label)):
-                    cname = class_name[i] if isinstance(class_name, (list, tuple)) else class_name
-                    item = (data[i], label[i], cname)
+            for i in range(len(label)):
+                cname = class_name[i] if isinstance(class_name, (list, tuple)) else class_name
+                item = (data[i], label[i], cname)
 
-                    if preds[i] == label[i]:
-                        if len(correct_items) < max_per_class:
-                            correct_items.append(item)
-                    else:
-                        if len(incorrect_items) < max_per_class:
-                            incorrect_items.append(item)
+                if preds[i] == label[i]:
+                    if len(correct_items) < max_per_class:
+                        correct_items.append(item)
+                else:
+                    if len(incorrect_items) < max_per_class:
+                        incorrect_items.append(item)
 
-                    if len(correct_items) >= max_per_class and len(incorrect_items) >= max_per_class:
-                        return correct_items + incorrect_items
+                if len(correct_items) >= max_per_class and len(incorrect_items) >= max_per_class:
+                    return correct_items + incorrect_items
 
         return correct_items + incorrect_items  # fallback in case fewer examples
 
     def generate_saliency_from_items(self, selected_items):
         print("[generate_saliency_from_items] → Starting")
-        self.model.eval()
         results = []
 
         for item_idx, (data, label, classname) in enumerate(selected_items):
