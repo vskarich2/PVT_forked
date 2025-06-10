@@ -37,28 +37,13 @@ class WandbMixin:
         accuracy_by_class = correct_by_class / (total_by_class + 1e-8)
         accuracy_by_class = np.round(accuracy_by_class, 4)
 
-        # Create a DataFrame for just this epoch
-        import pandas as pd
-        df = pd.DataFrame({
-            "class": self.class_names,
-            "accuracy": accuracy_by_class,
-            "num_samples": total_by_class.astype(int)
-        })
+        log_dict = {"epoch": epoch}
 
-        # Sort or not depending on preference
-        df = df.sort_values(by="accuracy", ascending=False)
+        for i, cls in enumerate(self.class_names):
+            log_dict[f"acc/{cls}"] = float(accuracy_by_class[i])
 
-        # Convert to W&B table
-        wandb_table = wandb.Table(dataframe=df)
+        wandb.log(log_dict)
 
-        wandb.log({
-            f"Per-Class Accuracy/Epoch {epoch}": wandb.plot_table(
-                "wandb/bar/v1",
-                wandb_table,
-                {"x": "class", "y": "accuracy", "extra": ["num_samples"]}
-            ),
-            "epoch": epoch
-        })
 
     def log_misclassified(self, mis_examples, epoch):
         # --- Log misclassified examples (up to 5)
@@ -128,10 +113,6 @@ class WandbMixin:
             }
         )
 
-        # create one Table for per-class stats across all epochs
-        self.per_class_table = wandb.Table(columns=["epoch", "class", "accuracy", "num_samples"])
-        # tell W&B that anything under “Per-Class Accuracy” uses the ‘epoch’ column as its x-axis
-        wandb.define_metric("Per-Class Accuracy/*", step_metric="epoch")
 
 
 

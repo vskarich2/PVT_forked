@@ -52,6 +52,7 @@ class Trainer(
         print(f"Using device: {self.args.device}")
 
         self.class_names = self.get_class_names()
+        self.class_to_idx = {cls: i for i, cls in enumerate(self.class_names)}
 
         if self.args.compute_saliency:
             print("Registering hooks for saliency gradients!!")
