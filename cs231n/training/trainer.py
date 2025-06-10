@@ -141,11 +141,11 @@ class Trainer(
 
         # Must be outside of no_grad
         if self.args.compute_saliency and self.args.wandb:
-            torch.set_grad_enabled(True)
-            saliency_examples = self.collect_saliency_examples()
-            saliency_items = self.generate_saliency_from_items(saliency_examples)
-            self.log_saliency(saliency_items, epoch)
-            torch.set_grad_enabled(False)  # reset
+            with torch.enable_grad():
+                saliency_examples = self.collect_saliency_examples()
+                saliency_items = self.generate_saliency_from_items(saliency_examples)
+                self.log_saliency(saliency_items, epoch)
+
 
         test_bar.close()
 

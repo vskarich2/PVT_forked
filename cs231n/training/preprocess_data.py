@@ -68,7 +68,7 @@ class DataPreprocessingMixin:
         data_t = torch.from_numpy(data_np.astype('float32'))  # (B, N, C)
         feats = data_t.permute(0, 2, 1).to(self.device)  # (B, 6, N)
         coords = data_t[:, :, 0:3].permute(0, 2, 1).to(self.device)  # (B, 3, N)
-        label_tensor = torch.LongTensor(label).to(self.device)  # (B,)
+        label_tensor = torch.tensor(label, dtype=torch.long, device=self.device)
         return (feats, coords), label_tensor
 
 
