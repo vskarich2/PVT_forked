@@ -8,7 +8,7 @@ class StandAloneTestMixin:
 
     def stand_alone_test(self):
         self.test_loader = self.get_test_loader()
-        
+
         print(f"\nPure Testing Run Starting with....{self.args.dataset}")
         # Fill in these values to make sure stats logging works ok
         train_avg_loss = 0.0

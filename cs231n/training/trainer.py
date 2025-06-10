@@ -133,9 +133,9 @@ class Trainer(
                 preds = logits.argmax(dim=1)
                 self.save_misclassified(coords, label, mis_examples, preds)
 
-            count += 1.0
-            test_true.append(label.cpu().numpy())
-            test_pred.append(preds.cpu().numpy())
+                count += 1.0
+                test_true.append(label.cpu().numpy())
+                test_pred.append(preds.cpu().numpy())
 
             if self.args.compute_saliency and self.args.wandb:
                 self.log_saliency(epoch)
