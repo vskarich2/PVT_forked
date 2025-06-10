@@ -136,11 +136,11 @@ class Trainer(
                 count += 1.0
                 test_true.append(label.cpu().numpy())
                 test_pred.append(preds.cpu().numpy())
+                running_avg_loss = test_loss / count
 
             if self.args.compute_saliency and self.args.wandb:
                 self.log_saliency(epoch)
 
-            running_avg_loss = test_loss / count
             test_bar.set_postfix(test_loss=running_avg_loss)
 
         test_bar.close()
